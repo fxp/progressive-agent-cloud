@@ -1,0 +1,49 @@
+{
+  "name": "progressive-agent-cloud",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-11-19",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "PA_AUTH_MODE": "github",
+    "PA_ORIGIN": "https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev",
+    "PA_SIGNUP_MODE": "open"
+  },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "PA_USER_JOBS",
+        "queue": "progressive-agent-user-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "progressive-agent-user-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 5,
+        "max_retries": 5,
+        "retry_delay": 60,
+        "dead_letter_queue": "progressive-agent-user-jobs-dlq"
+      }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "progressive-agent-cloud",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

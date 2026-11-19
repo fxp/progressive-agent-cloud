@@ -1,0 +1,8 @@
+import {execFileSync} from 'node:child_process';
+const config=process.env.WRANGLER_CONFIG??'wrangler.jsonc';
+const target=process.argv.includes('--local')?'--local':'--remote';
+const run=args=>execFileSync(process.platform==='win32'?'npx.cmd':'npx',['--no-install','wrangler','d1','execute','DB','--config',config,target,...args],{encoding:'utf8',stdio:['inherit','pipe','inherit']});
+const result=JSON.parse(run(['--json','--command',"SELECT name FROM sqlite_master WHERE type='table' AND name='pa_connections'"]));
+if(!result[0]?.results?.length)process.stdout.write(run(['--file','drizzle/0000_connectors.sql']));
+process.stdout.write(run(['--file','drizzle/0001_multiuser.sql']));
+console.log('Database migrations applied. Existing data preserved.');

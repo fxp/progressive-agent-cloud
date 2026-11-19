@@ -1,0 +1,10 @@
+node_modules/
+.local/
+.wrangler/
+worker/assets.generated.mjs
+dist/server/
+wrangler.jsonc
+.env*
+!.env.example
+.dev.vars*
+.DS_Store

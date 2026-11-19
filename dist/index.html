@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f7f8fc">
+  <meta name="description" content="Progressive Agent 将会议里的行动项关联到项目与仓库，交给你选择的 Agent 开发，再把经过测试的 PR 和结果带回原会话。">
+  <title>Progressive Agent — 从会议讨论，到代码交付</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到正文</a>
+  <header class="nav-wrap">
+    <nav class="nav shell" aria-label="主导航">
+      <a class="brand" href="#" aria-label="Progressive Agent 首页"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>progressive<span class="brand-agent"> / agent</span></a>
+      <div class="nav-links"><a href="#workflow">工作方式</a><a href="#connectors">连接器</a><a href="#open">开源设计</a></div>
+      <a class="nav-cta" href="/app">进入工作台 <span class="book" aria-hidden="true">▤</span></a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero shell">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="tiny-mark"></span>为使用 Agent 的开发团队而造</div>
+        <h1>会议里的下一步，<br>成为代码里的<span class="emphasis">下一版。<span class="underline"></span></span></h1>
+        <p class="hero-description">从讨论中提取待办，找到对应项目，交给你的 Agent 开发。<br class="desktop">经过测试的 Pull Request，回到最初的会话。</p>
+        <div class="hero-actions"><a class="button primary" href="#workflow">看看它怎么工作 <span class="play-icon" aria-hidden="true"></span></a><a class="button secondary" href="design.html">探索开源设计</a></div>
+        <p class="hero-note"><span class="branch-symbol" aria-hidden="true">⑂</span> 自托管优先 <span class="note-dot">·</span> 连接你的会议、项目和 Agent</p>
+      </div>
+      <div class="hero-margin" aria-hidden="true"><span>DISCUSS</span><span class="margin-line"></span><span>BUILD</span></div>
+    </section>
+
+    <section class="demo-wrap shell" id="workflow" aria-labelledby="demo-title">
+      <div class="demo-caption"><div><span class="caption-label">MEETING TO PULL REQUEST</span><h2 id="demo-title">一次评审，接上整个开发流程。</h2></div><span class="demo-tag">交互演示 · 示例数据</span></div>
+      <div class="demo-window">
+        <div class="window-top"><span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span><span class="window-title">progressive agent / focus-board</span><span class="window-health">工作流预览</span></div>
+        <div class="flow-strip" role="tablist" aria-label="查看工作流阶段">
+          <button class="flow-step active" role="tab" id="tab-meeting" aria-selected="true" aria-controls="flow-panel" data-step="0"><span class="step-glyph">▥</span><span>会议来源</span></button><span class="flow-line"></span>
+          <button class="flow-step" role="tab" id="tab-task" aria-selected="false" aria-controls="flow-panel" data-step="1"><span class="step-glyph">☷</span><span>待办与项目</span></button><span class="flow-line"></span>
+          <button class="flow-step" role="tab" id="tab-agent" aria-selected="false" aria-controls="flow-panel" data-step="2"><span class="step-glyph">⌘</span><span>Agent 执行</span></button><span class="flow-line"></span>
+          <button class="flow-step" role="tab" id="tab-result" aria-selected="false" aria-controls="flow-panel" data-step="3"><span class="step-glyph">⑂</span><span>代码交付</span></button>
+        </div>
+        <div class="demo-content" id="flow-panel" role="tabpanel" aria-labelledby="tab-meeting">
+          <div class="meeting-pane">
+            <div class="pane-top"><div class="meeting-icon">F</div><div><p class="pane-kicker">飞书妙记</p><h3>Focus Board 产品评审</h3></div><span class="duration">08:42</span></div>
+            <div class="transcript">
+              <div class="speaker-row"><span class="avatar avatar-blue">林</span><div><div class="speaker">林晓 <span>05:12</span></div><p>待办一多，就很难找到自己负责的事。<mark>给列表加个负责人筛选吧。</mark></p></div></div>
+              <div class="speaker-row"><span class="avatar avatar-peach">王</span><div><div class="speaker">王敏 <span>05:28</span></div><p>默认显示全部，也要能选“未分配”。切换时，列表数量一起更新。</p></div></div>
+              <div class="speaker-row last"><span class="avatar avatar-blue">林</span><div><div class="speaker">林晓 <span>05:46</span></div><p>可以，保留原来的顺序，补好这几种情况的测试。</p></div></div>
+            </div>
+            <div class="transcript-footer"><span class="wave" aria-hidden="true">▂▅▃▆▃▇▅▂▃▆▂▅▃▆▂</span><span>每个任务，都留得住讨论的依据。</span></div>
+          </div>
+          <div class="task-pane">
+            <div class="task-top"><span class="label-pill">AGENT TASK</span><span class="task-id">PA-042</span></div>
+            <h3>给待办列表增加<br>负责人筛选</h3>
+            <p class="task-intro">从原话中整理目标、约束和验收条件。</p>
+            <div class="project-binding"><span class="project-icon">F<span>◆</span></span><div><span class="muted-label">所属项目</span><strong>Focus Board</strong><code>acme/focus-board</code></div><span class="binding-check">✓</span></div>
+            <div class="acceptance"><span class="muted-label">验收条件</span><p><span>✓</span> 全部、指定负责人、未分配</p><p><span>✓</span> 列表和计数同步更新</p><p><span>✓</span> 保持顺序，补充测试</p></div>
+            <div class="agent-choice"><span class="muted-label">执行器</span><button id="agent-toggle" type="button" aria-haspopup="menu" aria-expanded="false">BigModel Managed <span>⌄</span></button><div id="agent-menu" role="menu" hidden><button role="menuitem" data-agent="BigModel Managed">BigModel Managed · 已验证</button><button role="menuitem" data-agent="Claude Code">Claude Code · 已有适配</button><button role="menuitem" data-agent="自定义执行器">自定义执行器 · 接口规划</button></div></div>
+          </div>
+          <div class="run-pane">
+            <div class="run-header"><span class="run-orb" aria-hidden="true">✳</span><span>一次有上下文的执行</span></div>
+            <div class="terminal"><div class="terminal-top"><span>focus-board / task-042</span><span>bash</span></div><p><span class="command">$</span> git checkout -b task/pa-042</p><p class="terminal-comment">准备独立工作副本</p><p><span class="command">$</span> npm test</p><p class="terminal-success">✓ default &amp; owner filter</p><p class="terminal-success">✓ unassigned &amp; reset</p><p class="terminal-success">✓ existing behavior</p><div class="terminal-rule"></div><p class="terminal-result">tests passed <span>✓</span></p></div>
+            <div class="pr-preview"><div class="pr-symbol">⑂</div><div><span class="muted-label">可审阅的成果</span><strong>Add assignee filtering</strong><span class="pr-draft">Draft PR <i>+92 −6</i></span></div></div>
+            <div class="return-note"><span>▤</span><div><strong>结果写回原任务</strong><p>项目、会议、代码，始终有关联。</p></div><span class="return-check">✓</span></div>
+          </div>
+        </div>
+        <div class="demo-bottom"><p id="stage-description" aria-live="polite">会议结束后，同步可读逐字稿，保留发言人与原话。</p><div class="demo-controls"><button id="demo-prev" aria-label="上一阶段" disabled>‹</button><span id="demo-position">会议来源</span><button id="demo-next" aria-label="下一阶段">›</button><button class="replay" id="demo-replay"><span aria-hidden="true">↻</span> 重播</button></div></div>
+      </div>
+      <div class="workflow-under"><p><strong>从“说过了”到“有结果”。</strong> 连接你已有的工作方式。</p><a href="design.html#core-flow">查看完整产品流程</a></div>
+    </section>
+
+    <section class="principles shell" aria-labelledby="principles-title">
+      <div class="section-intro"><div><span class="caption-label">CONTEXT THAT FOLLOWS THE WORK</span><h2 id="principles-title">Agent 开工之前，<br>先把这件事讲清楚。</h2></div><p>待办有依据，执行有项目，<br>交付有验收。</p></div>
+      <div class="principle-grid">
+        <article><span class="feature-icon evidence-icon" aria-hidden="true">“</span><h3>从原话，到明确的任务</h3><p>保留来源、发言人与时间戳。提取目标和验收条件，缺少信息时在原会话追问。</p><a href="design.html#tasks">任务模型 <span aria-hidden="true">＋</span></a></article>
+        <article><span class="feature-icon project-feature" aria-hidden="true">▣</span><h3>在对的项目里，接着做</h3><p>项目关联仓库、资料和执行规则。先确认任务归属，再把需要的上下文交给 Agent。</p><a href="design.html#projects">项目匹配 <span aria-hidden="true">＋</span></a></article>
+        <article><span class="feature-icon delivery-icon" aria-hidden="true">⑂</span><h3>把可审阅的结果带回来</h3><p>独立分支、代码校验、草稿 PR。成果链接写回任务，也能从项目找到每次交付。</p><a href="design.html#delivery">执行与交付 <span aria-hidden="true">＋</span></a></article>
+      </div>
+    </section>
+
+    <section class="connections" id="connectors">
+      <div class="shell connections-inner"><div class="connection-copy"><span class="caption-label">YOUR STACK, CONNECTED</span><h2>接上你的会议、<br>项目和 Agent。</h2><p>从已有的项目平台同步上下文。<br>让待办找到仓库，交给合适的 Agent。</p><a class="text-link" href="design.html#connectors">查看连接器契约 <span aria-hidden="true">＋</span></a><a class="text-link project-research-link" href="project-sources.html">项目来源选型</a><p class="connection-note">按实际验证状态展示。项目来源为接入规划。</p></div>
+      <div class="connector-panel"><div class="connector-tabs" role="tablist" aria-label="连接器类型"><button role="tab" aria-selected="true" data-connector="sources">会议来源</button><button role="tab" aria-selected="false" data-connector="projects">项目来源</button><button role="tab" aria-selected="false" data-connector="agents">执行 Agent</button><button role="tab" aria-selected="false" data-connector="delivery">仓库与回填</button></div><div id="connector-list" role="tabpanel" aria-label="连接器状态"></div><div class="connector-foot"><span>+</span><p>接入你的工具，从一个适配器开始。</p></div></div></div>
+    </section>
+
+    <section class="open-section shell" id="open">
+      <div class="open-panel"><div class="open-copy"><span class="caption-label">DESIGNED TO BE OPEN</span><h2>把你的开发方式，<br>留在你手里。</h2><p>自托管核心，选择自己的会议工具、代码仓库与执行 Agent。<br>从一个项目起步，也为社区适配器留好接口。</p><div class="open-actions"><a class="button white-button" href="design.html">阅读完整设计</a><a class="button dark-outline" href="https://github.com/fxp/progressive-agent-cloud" target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a></div><span class="release-note">Apache-2.0 · 可独立部署 · 数据与授权按用户隔离</span></div><div class="interface-preview"><div class="interface-top"><span>connector.ts</span><span>接口草案</span></div><pre><span class="syntax-purple">interface</span> <span class="syntax-green">MeetingSource</span> {
+  discover(cursor): <span class="syntax-green">Meeting[]</span>
+  transcript(id): <span class="syntax-green">Transcript</span>
+}
+
+<span class="syntax-purple">interface</span> <span class="syntax-green">AgentExecutor</span> {
+  start(task, project): <span class="syntax-green">Run</span>
+  events(run, cursor): <span class="syntax-green">Event[]</span>
+  collect(run): <span class="syntax-green">Artifact[]</span>
+}</pre><div class="interface-bottom">同一份任务契约，连接不同执行方式。</div></div></div>
+    </section>
+    <section class="faq shell" aria-labelledby="faq-title"><h2 id="faq-title">开始之前，你可能想知道</h2><div class="faq-list">
+      <details><summary>会自动执行会议里所有的待办吗？</summary><p>产品设计中，项目决定执行策略。任务先确认项目、验收条件和权限，信息不齐会进入待确认。团队可以为指定项目和来源打开自动执行。</p></details>
+      <details><summary>可以用我自己的 Agent 和代码仓库吗？</summary><p>可以通过适配器接入。当前实现已有 BigModel、Claude Code 等执行路径，云端完整试点使用 BigModel 和 GitHub。更多 Agent 与代码托管平台会按统一契约逐步接入。</p></details>
+      <details><summary>Mac 关机以后还能运行吗？</summary><p>云端试点的发现、接力、编码、测试和回填都在云端执行。本机接力停用的验收已经通过，物理关机尚未实测。使用本地 Agent 时，需要对应执行主机在线。</p></details>
+      <details><summary>现在可以部署开源版吗？</summary><p>可以。开源版提供 Cloudflare Workers、D1 与 Queues 的部署配置，附授权指南和自动测试。GitHub、Linear 与飞书授权、Agent 密钥均按用户隔离；跨组织飞书授权受应用发布范围限制。</p></details>
+    </div></section>
+  </main>
+  <footer class="footer shell"><a class="brand" href="#"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>progressive<span class="brand-agent"> / agent</span></a><p>从一次讨论，走到一次交付。</p><div><a href="design.html">产品设计</a><a href="assets/product-design.md" download>设计文档</a><span>© 2026</span></div></footer>
+  <div class="toast" role="status" id="toast" hidden></div>
+</body>
+</html>

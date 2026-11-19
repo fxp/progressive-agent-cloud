@@ -1,0 +1,27 @@
+{
+  "name": "progressive-agent-cloud",
+  "type": "module",
+  "scripts": {
+    "preview": "node scripts/preview.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node --test platform/test/*.test.mjs",
+    "check": "node --check dist/app.js",
+    "validate": "node scripts/validate-artifact.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "tweetnacl-sealedbox-js": "1.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "wrangler": "4.165.0"
+  },
+  "version": "0.1.0",
+  "description": "Meeting decisions to tested draft pull requests through user-owned connectors.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fxp/progressive-agent-cloud.git"
+  }
+}
