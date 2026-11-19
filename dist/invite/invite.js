@@ -1,0 +1,6 @@
+const token=location.hash.slice(1),button=document.querySelector('#accept-invite'),error=document.querySelector('#invite-error');
+const errors={invitation_unavailable:'邀请已使用、过期或被撤销。请联系邀请人重新创建。',invitation_account_mismatch:'当前 GitHub 账号与受邀账号不同。请使用受邀账号重新登录。',origin_mismatch:'页面地址不匹配，请从原邀请链接重新打开。'};
+async function call(action){const r=await fetch('/api/invitations/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token})});const j=await r.json();if(!r.ok)throw Error(errors[j.error]||'暂时无法核对邀请，请稍后重试。');return j;}
+function failed(e){error.textContent=e.message;error.hidden=false;button.hidden=true;document.querySelector('#invite-status').textContent='当前邀请暂不可用。';}
+button.addEventListener('click',async()=>{button.disabled=true;error.hidden=true;try{const r=await call('start');location.assign(r.url);}catch(e){failed(e);button.disabled=false;}});
+if(!token)failed(Error('请使用邀请人发给你的完整链接。'));else call('inspect').then(j=>{document.querySelector('#invite-status').textContent='这份邀请仅限以下 GitHub 账号使用：';document.querySelector('#invite-login').textContent='@'+j.login;document.querySelector('#invite-expiry').textContent='邀请有效期至 '+new Date(j.expiresAt).toLocaleString('zh-CN');button.hidden=false;}).catch(failed);

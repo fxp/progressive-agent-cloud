@@ -1,0 +1,26 @@
+name: Connector request
+description: Propose a meeting, project, Agent, repository or delivery plugin.
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and official API documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: roles
+    attributes:
+      label: Connector roles
+      options:
+        - label: Meeting source
+        - label: Project management
+        - label: Agent
+        - label: Repository
+        - label: Result delivery
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow, authentication and acceptance criteria
+      description: Explain how the plugin fits an existing project. Do not share credentials or private meeting data.
+    validations:
+      required: true

@@ -97,7 +97,8 @@ export async function sessionCookie(session,{secret,secure=true,now=Date.now()})
 }
 
 export async function preauthCookie(pending,{secret,secure=true,now=Date.now()}){
-  return setCookie(PREAUTH_COOKIE,await sign({user:pending},{secret,context:PREAUTH_CONTEXT,ttlMs:PREAUTH_TTL_MS,now}),{maxAge:Math.floor(PREAUTH_TTL_MS/1000),secure});
+  const value=typeof pending==='string'?{user:pending}:{user:pending.user,...(pending.inviteHash?{inviteHash:pending.inviteHash}:{})};
+  return setCookie(PREAUTH_COOKIE,await sign(value,{secret,context:PREAUTH_CONTEXT,ttlMs:PREAUTH_TTL_MS,now}),{maxAge:Math.floor(PREAUTH_TTL_MS/1000),secure});
 }
 
 // PA_ALLOWED_GITHUB_LOGINS is a comma-separated GitHub login allowlist.

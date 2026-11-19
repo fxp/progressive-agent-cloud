@@ -9,7 +9,7 @@ import {scanSource} from '../sources.mjs';
 import {seal,open,hash,b64,Fault} from '../security.mjs';
 async function fixture(){
  let now=1795080000000;const calls=[];
- const env={DB:database(),PA_AUTH_MODE:'github',PA_ORIGIN:'https://example.test',PA_FEISHU_STORE_CLIENT_ID:'cli_store',PA_FEISHU_STORE_CLIENT_SECRET:'store-secret',PA_FEISHU_STORE_ENCRYPT_KEY:'encrypt-key',PA_FEISHU_STORE_VERIFICATION_TOKEN:'verification-token',PA_ENCRYPTION_KEY:Buffer.alloc(32,4).toString('base64')};
+ const env={DB:database(),PA_AUTH_MODE:'github',PA_ALLOWED_GITHUB_LOGINS:'A,B',PA_ORIGIN:'https://example.test',PA_FEISHU_STORE_CLIENT_ID:'cli_store',PA_FEISHU_STORE_CLIENT_SECRET:'store-secret',PA_FEISHU_STORE_ENCRYPT_KEY:'encrypt-key',PA_FEISHU_STORE_VERIFICATION_TOKEN:'verification-token',PA_ENCRYPTION_KEY:Buffer.alloc(32,4).toString('base64')};
  const providers={identity:async()=>({id:'ou_A',name:'A',tenantId:'tenant_A'}),feishu:async(token,path,body)=>{calls.push({token,path,body});return {};},minuteInfo:async(_,id)=>({title:'Test meeting',url:'https://example.feishu.cn/minutes/'+id}),transcript:async()=>'Implement search.'};
  const p=new Platform(env,{providers,now:()=>now,fetcher:async()=>Response.json({access_token:'oauth-access',refresh_token:'oauth-refresh',expires_in:3600})});
  p.extract=async transcript=>[{title:'Search',goal:'Search',acceptance:['Search works'],evidence:transcript}];

@@ -1,5 +1,6 @@
 import {Fault, hash, unb64} from './security.mjs';
 import {reviewChange} from './fidelity.mjs';
+import {accountEnabled} from './invitations.mjs';
 
 export {WORKFLOW_PATH,workflow} from './connectors/github-workflow.mjs';
 import {WORKFLOW_PATH} from './connectors/github-workflow.mjs';
@@ -79,13 +80,14 @@ export class Execution {
       return;
     }
     row.status='dispatching';await this.s.saveTask(row);
+    if(!await accountEnabled(this.p,row.user_id))throw new Fault(403,'account_disabled');
     await repository.dispatch(ctx,p,row.payload);
   }
   async verification(user,id){const task=await this.s.own('tasks',id,user),project=await this.s.own('projects',task.project_id,user);return this.repository(project).verification(this.context(),user,id);}
   async runnerProject(id,secret){
     const p=await this.s.one('SELECT * FROM pa_projects WHERE id=?',id);
     if(!p?.active||!p.binding?.runnerReady||await hash(secret??'')!==p.binding.runnerTokenHash)throw new Fault(401,'runner_unauthorized');
-    if(this.p.env.PA_AUTH_MODE==='github'&&!await this.s.one('SELECT id FROM pa_users WHERE id=? AND disabled_at IS NULL',p.user_id))throw new Fault(401,'runner_unauthorized');
+    if(!await accountEnabled(this.p,p.user_id))throw new Fault(401,'runner_unauthorized');
     const c=await this.s.own('connections',p.binding.repositoryConnectionId??p.binding.githubConnectionId,p.user_id);
     const agent=await this.s.connection(p.user_id,p.binding.agent??'bigmodel');
     const meeting=await this.s.connection(p.user_id,'feishu');if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(401,'runner_unauthorized');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}

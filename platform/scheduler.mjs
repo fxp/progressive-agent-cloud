@@ -2,9 +2,11 @@ import {Platform} from './service.mjs';
 import {Execution} from './execution.mjs';
 import {coordinate} from './coordinator.mjs';
 import {Fault,hash} from './security.mjs';
+import {accountEnabled} from './invitations.mjs';
 
 export async function enqueueUser(p,user,{reason='cron'}={}){
   if(!p.env.PA_USER_JOBS)throw new Fault(503,'queue_not_configured');
+  if(!await accountEnabled(p,user))return {queued:false};
   const connections=await p.store.all("SELECT * FROM pa_connections WHERE user_id=? AND status='connected'",user);
   if(!connections.some(c=>p.registry.has(c.provider,'meeting'))||!connections.some(c=>p.registry.has(c.provider,'agent')))return {queued:false};
   const bucket=Math.floor(p.now()/(reason==='cron'?300000:60000));
@@ -38,7 +40,7 @@ export async function consume(batch,env,runnerSource,options={}){
     const job=await p.store.one('SELECT * FROM pa_jobs WHERE id=? AND user_id=?',body.jobId,body.userId);
     if(!job||job.state==='completed'){message.ack();continue;}
     const user=await p.store.one('SELECT * FROM pa_users WHERE id=? AND disabled_at IS NULL',job.user_id);
-    if(!user){message.ack();continue;}
+    if(!user||!await accountEnabled(p,job.user_id)){message.ack();continue;}
     const release=await p.store.lease('user-job:'+job.user_id,600000).catch(e=>{if(e.code==='busy_retry_later')return null;throw e;});
     if(!release){message.retry({delaySeconds:30});continue;}
     try{
@@ -48,12 +50,25 @@ export async function consume(batch,env,runnerSource,options={}){
       if(!sources.length||!connections.some(c=>p.registry.has(c.provider,'agent'))){
         await p.store.run("UPDATE pa_jobs SET state='completed',updated_at=? WHERE id=?",p.now(),job.id);message.ack();continue;
       }
-      let result={};
+      let result={},succeeded=0;const sourceErrors=[];
       for(const source of sources){
-        const summary=await p.registry.get(source.provider,'meeting').discover({platform:p,scan:options.scan,legacy:()=>coordinate(env,runnerSource,{platform:p,execution:ex,scheduledTime:p.now()})},source);
-        for(const [key,value]of Object.entries(summary??{}))result[key]=typeof value==='number'?(result[key]??0)+value:value;
+        try{
+          const summary=await p.registry.get(source.provider,'meeting').discover({platform:p,scan:options.scan,legacy:()=>coordinate(env,runnerSource,{platform:p,execution:ex,scheduledTime:p.now()})},source);
+          for(const [key,value]of Object.entries(summary??{}))result[key]=typeof value==='number'?(result[key]??0)+value:value;
+          await p.store.run("UPDATE pa_connections SET error=NULL WHERE id=? AND user_id=? AND status='connected'",source.id,job.user_id);succeeded++;
+        }catch(error){
+          const code=error.code??'source_check_failed';sourceErrors.push({provider:source.provider,error:code,retry:error.status!==401});
+          await p.store.run("UPDATE pa_connections SET status=?,error=? WHERE id=? AND user_id=? AND status='connected'",error.status===401?'needs_auth':'connected',code,source.id,job.user_id);
+        }
       }
-      const tick=await ex.tick(undefined,job.user_id);result={...result,...tick};
+      if(succeeded)result={...result,...await ex.tick(undefined,job.user_id)};
+      if(sourceErrors.length){
+        const state=succeeded?'partial':'failed',code=sourceErrors[0].error;
+        await p.store.receipt('run-'+job.id,job.user_id,{...result,error:code,sourceErrors},state);
+        await p.store.run('UPDATE pa_jobs SET state=?,error=?,updated_at=? WHERE id=?',state,code,p.now(),job.id);
+        if(sourceErrors.some(e=>e.retry))message.retry({delaySeconds:60});else message.ack();
+        continue;
+      }
       await p.store.receipt('run-'+job.id,job.user_id,result,'completed');
       await p.store.run("UPDATE pa_jobs SET state='completed',error=NULL,updated_at=? WHERE id=?",p.now(),job.id);
       message.ack();
@@ -61,7 +76,7 @@ export async function consume(batch,env,runnerSource,options={}){
       const code=error.code??'user_job_failed';
       await p.store.receipt('run-'+job.id,job.user_id,{error:code},'failed');
       await p.store.run("UPDATE pa_jobs SET state='failed',error=?,updated_at=? WHERE id=?",code,p.now(),job.id);
-      if(error.status===401){await p.store.run("UPDATE pa_connections SET status='needs_auth',error=? WHERE user_id=? AND provider='feishu'",code,job.user_id);message.ack();}
+      if(error.status===401)message.ack();
       else message.retry({delaySeconds:60});
     }finally{await release();}
   }
