@@ -14,6 +14,16 @@ export class Providers {
     return result;
   }
   gh(token, path, body, method) { return this.request('https://api.github.com' + path, token, body, method); }
+  gl(token,path,body,method){return this.request('https://gitlab.com/api/v4'+path,token,body,method);}
+  async glPages(token,path){
+    const result=[];
+    for(let page=1;page<=100;page++){
+      const rows=await this.gl(token,path+(path.includes('?')?'&':'?')+'per_page=100&page='+page);
+      if(!Array.isArray(rows))throw new Fault(502,'provider_response_invalid');
+      result.push(...rows);if(rows.length<100)return result;
+    }
+    throw new Fault(502,'pagination_limit');
+  }
   async gql(provider, token, query, variables={}) {
     return (await this.request(provider === 'github' ? 'https://api.github.com/graphql' : 'https://api.linear.app/graphql', token, {query, variables})).data;
   }
@@ -28,6 +38,7 @@ export class Providers {
     throw new Fault(502, 'pagination_limit');
   }
   async identity(provider, token) {
+    if(provider==='gitlab'){const u=await this.gl(token,'/user');if(!u.id||!u.username)throw new Fault(502,'gitlab_identity_invalid');return {id:String(u.id),name:u.username};}
     if (provider === 'github') {const u = await this.gh(token, '/user'); return {id:String(u.id), name:u.login};}
     if(provider==='feishu'){
       const r=await this.feishu(token,'/authen/v1/user_info');
@@ -79,6 +90,10 @@ export class Providers {
     return {transcript:todos.map(todo=>todo.content).join('\n\n'),sourceKind:'meeting_todos',sourceTodoIds:todos.map(todo=>todo.id).filter(Boolean),sourceTodos:todos.map((t,i)=>({id:t.id??'todo-'+i,content:t.content})),sourceNotes:noteSources(data),empty:todos.length===0};
   }
   async projects(provider, token) {
+    if(provider==='gitlab'){
+      const rows=await this.glPages(token,'/projects?membership=true&archived=false&min_access_level=20&order_by=id&sort=asc');
+      return rows.filter(p=>!p.archived&&p.issues_enabled!==false).map(p=>({externalId:String(p.id),name:p.name_with_namespace??p.name,description:p.description,url:p.web_url,metadata:{path:p.path_with_namespace}}));
+    }
     if (provider === 'linear') {
       const nodes = await this.paginate(async cursor => (await this.gql('linear', token,
         'query($cursor:String){projects(first:100,after:$cursor){nodes{id name description url archivedAt teams{nodes{id name}}}pageInfo{hasNextPage endCursor}}}', {cursor})).projects);
@@ -110,6 +125,14 @@ export class Providers {
   async issue(provider, token, project, task) {
     const marker = `<!-- progressive-agent:${task.id} -->`;
     const description = [task.goal,'', '验收条件',...task.acceptance.map(a=>'- '+a),'', '来源会议：'+task.meetingUrl,'', (task.sourceKind==='meeting_todos'?'纪要待办依据：':'原话依据：')+task.evidence,...(task.sourceEvidence?.length?['','验收依据（逐字引用）：',...task.sourceEvidence.map(c=>`- [${c.sourceId}${c.title?' · '+c.title:''}] ${c.quote}`)]:[]),'',marker].join('\n');
+    if(provider==='gitlab'){
+      const root='/projects/'+encodeURIComponent(project.external_id)+'/issues';
+      if(task.issueUrl)throw new Fault(400,'gitlab_existing_issue_not_supported');
+      const rows=await this.glPages(token,root+'?scope=all&state=all&search='+encodeURIComponent(task.id)+'&in=description');
+      const issue=rows.find(i=>i.description?.includes(marker))??await this.gl(token,root,{title:task.title,description});
+      if(String(issue.project_id)!==project.external_id||!issue.iid||!issue.web_url)throw new Fault(502,'issue_project_mismatch');
+      return {id:String(issue.iid),projectId:project.external_id,url:issue.web_url};
+    }
     if (provider==='linear') {
       if (task.issueUrl) {
         const identifier=/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z0-9-]+)(?:\/|$)/.exec(task.issueUrl)?.[1];
@@ -147,6 +170,13 @@ export class Providers {
   async backfill(provider, token, project, task) {
     const marker=`<!-- progressive-agent:${task.id}:pr -->`;
     const body=[`开发结果：${task.result.pr}`,`测试通过：${task.result.tests}`,`提交：${task.result.commit}`,`运行：${task.result.runUrl}`,...(task.fidelityReview?.approved?['需求证据核对：通过（逐项核对原文约束及代码，未发现新增功能）。']:[]),'草稿 PR 已创建，等待代码审阅。',marker].join('\n\n');
+    if(provider==='gitlab'){
+      if(task.original.projectId!==project.external_id||!/^\d+$/.test(task.original.id))throw new Fault(400,'issue_project_mismatch');
+      const path='/projects/'+encodeURIComponent(project.external_id)+'/issues/'+task.original.id+'/notes';
+      const comments=await this.glPages(token,path);
+      if(!comments.some(c=>c.body?.includes(marker)))await this.gl(token,path,{body});
+      return;
+    }
     if(provider==='github'){
       for(let page=1;page<=100;page++){
         const rows=await this.gh(token,`/repos/${project.binding.repo}/issues/${task.original.id}/comments?per_page=100&page=${page}`);

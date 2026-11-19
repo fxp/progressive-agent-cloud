@@ -56,3 +56,11 @@ test('code review is reused only for identical files and patch; malformed approv
  const p=platform([{approved:true,violations:[]},{approved:false,violations:['changed code']}]);const [task]=groundedActions(input,proposal());task.patchChecksum='abc';const files=[{path:'a.js',content:Buffer.from('exact code').toString('base64')}];task.fidelityReview=await reviewChange(p,'owner',task,files);assert.equal((await reviewChange(p,'owner',task,files)).approved,true);assert.equal(p.requests.length,1);assert.equal((await reviewChange(p,'owner',task,[{...files[0],content:Buffer.from('different').toString('base64')}])).approved,false);
  const invalid=platform([{approved:true}]);await assert.rejects(()=>reviewChange(invalid,'owner',task,files.map(f=>({...f,path:'new.js'}))),{code:'requirement_review_invalid'});
 });
+test('omitted or wholly ambiguous TODOs remain visible and cannot auto-execute',async()=>{
+ const unclear={id:'t2',content:'Relay Desk 的提醒要更智能，尚未确认触发条件和通知方式。'};
+ for(const result of [proposal(),{actions:[]}]){
+  const p=platform(result.actions.length?[result,{groups:[{indices:[0],approved:true}]}]:[result]);
+  const actions=await extractGrounded(p,'owner',{...input,sourceTodos:[...input.sourceTodos,unclear]});
+  const pending=actions.find(a=>a.actionTodoIds.includes('t2'));assert.equal(pending.requiresClarification,true);assert.deepEqual(pending.acceptance,[]);assert.match(pending.clarificationReason,/预期行为/);
+ }
+});

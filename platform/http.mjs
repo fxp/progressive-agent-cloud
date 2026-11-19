@@ -3,6 +3,7 @@ import {startBootstrap,pollBootstrap,bootstrapOAuth} from './feishu-bootstrap.mj
 import {Platform} from './service.mjs';
 import {Execution} from './execution.mjs';
 import {enqueueUser} from './scheduler.mjs';
+import {rotateWebhook,webhookConnection,receiveMeeting,meetingStatus} from './meeting-webhook.mjs';
 import {Fault,hash,random} from './security.mjs';
 import {SESSION_COOKIE,PREAUTH_COOKIE,sessionFrom,preauthFrom,sessionCookie,preauthCookie,clearCookie,isSecureRequest,requireAllowedLogin} from './auth.mjs';
 
@@ -19,6 +20,15 @@ export async function route(request,env,runnerSource,options={}){
   try{
     const p=new Platform(env,options);const execution=new Execution(p,runnerSource);
     const path=url.pathname;
+    const incoming=/^\/api\/webhooks\/meetings\/([\w-]+)(?:\/(inbound-[a-f0-9]{64}))?$/.exec(path);
+    if(incoming){
+      if(incoming[2]?request.method!=='GET':request.method!=='POST')throw new Fault(405,'method_not_allowed');
+      const source=await webhookConnection(p,incoming[1],request.headers.get('authorization'));
+      if(incoming[2])return json(await meetingStatus(p,source,incoming[2]));
+      const result=await receiveMeeting(p,source,await body(request));
+      await enqueueUser(p,source.user_id,{reason:'event'});
+      return json(result,202);
+    }
     if(path==='/api/webhooks/feishu'){
       const result=await receiveFeishu(request,p);
       if(result.challenge!==undefined)return json({challenge:result.challenge});
@@ -107,6 +117,8 @@ export async function route(request,env,runnerSource,options={}){
       });return json(state);
     }
     let m;
+    if(path==='/api/connectors/gitlab/token'&&request.method==='POST')return json(await p.saveGitlab(user,await body(request)));
+    if(path==='/api/connectors/meeting-webhook/rotate'&&request.method==='POST')return json(await rotateWebhook(p,user));
     if(path==='/api/connectors/feishu/bootstrap/start'&&request.method==='POST')return json(await startBootstrap(p,user));
     if((m=/^\/api\/connectors\/feishu\/bootstrap\/([\w-]+)\/(poll|authorize)$/.exec(path))&&request.method==='POST'){
       const result=m[2]==='poll'?await pollBootstrap(p,user,m[1]):await bootstrapOAuth(p,user,m[1],await body(request));

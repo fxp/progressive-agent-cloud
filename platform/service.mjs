@@ -3,6 +3,7 @@ import {catalog, oauthProviders} from './catalog.mjs';
 import {Providers} from './providers.mjs';
 import {Store} from './store.mjs';
 import {extractGrounded} from './fidelity.mjs';
+import {meetingIdentity} from './meeting-identity.mjs';
 import {Fault, random, hash, challenge, seal, open, requireValue, validateBinding, matchProject} from './security.mjs';
 
 export class Platform {
@@ -29,6 +30,17 @@ export class Platform {
     if(!probe.ok)throw new Fault(probe.status===401||probe.status===403?401:502,'agent_key_rejected');
     const id='bigmodel-'+await hash(user);
     await this.store.connect({id,user,provider:'bigmodel',kind:'agent',identity:{id:'bigmodel',name:'个人 Managed Agent'},credential:await seal(this.env.PA_ENCRYPTION_KEY,{apiKey},id)});
+  }
+  async saveGitlab(user,input){
+    const token=String(input.token??'').trim();
+    if(token.length<10||token.length>4096||/\s/.test(token))throw new Fault(400,'gitlab_token_invalid');
+    const scope=await this.providers.gl(token,'/personal_access_tokens/self');
+    if(scope.revoked||scope.active!==true||!Array.isArray(scope.scopes)||!scope.scopes.includes('api'))throw new Fault(400,'gitlab_api_scope_required');
+    const identity=await this.providers.identity('gitlab',token),previous=await this.store.connection(user,'gitlab');
+    if(previous&&previous.status!=='disconnected'&&previous.identity.id!==identity.id)throw new Fault(409,'different_account_disconnect_first');
+    const id='gitlab-'+await hash(user);
+    await this.store.connect({id,user,provider:'gitlab',kind:'project',identity,credential:await seal(this.env.PA_ENCRYPTION_KEY,{access_token:token},id)});
+    return {synced:await this.sync(user,id)};
   }
   async envConfig(provider) {
     if(!oauthProviders[provider])throw new Fault(400,'unknown_connector');
@@ -168,7 +180,7 @@ export class Platform {
   }
   async sync(user,id) {
     const connection=await this.store.own('connections',id,user);
-    if(!oauthProviders[connection.provider])throw new Fault(400,'not_a_project_connector');
+    if(!['github','linear','gitlab'].includes(connection.provider))throw new Fault(400,'not_a_project_connector');
     const release=await this.store.lease('sync:'+id,180000);
     try{
       const projects=await this.providers.projects(connection.provider,await this.access(connection));
@@ -187,6 +199,7 @@ export class Platform {
     }catch(error){await this.store.run('UPDATE pa_connections SET status=?,error=? WHERE id=?',error.status===401?'needs_auth':'error',error.code??'sync_failed',id);throw error;}finally{await release();}
   }
   async activate(user,provider) {
+    if(provider==='meeting-webhook'||provider==='gitlab')throw new Fault(400,'connector_setup_required');
     if(provider==='feishu'&&this.legacyUser(user)&&this.env.PA_FEISHU_OPEN_ID)return this.store.connect({id:'feishu-'+await hash(user),user,provider,kind:'meeting',identity:{id:this.env.PA_FEISHU_OPEN_ID,name:'原内测云端授权'}});
     if(provider==='bigmodel'&&!this.legacyUser(user))throw new Fault(409,'agent_key_missing');
     const item=catalog.find(c=>c.id===provider && c.auth!=='oauth');
@@ -270,9 +283,29 @@ export class Platform {
     if(typeof input.transcript!=='string'||typeof input.externalId!=='string'||input.externalId.length>200)throw new Fault(400,'invalid_meeting');
     const key='meeting-'+await hash(connection.id+':'+input.externalId);
     const release=await this.store.lease(key,180000);
+    let releaseIdentity,identityKey;
     try{
       const receipt=await this.store.one('SELECT * FROM pa_receipts WHERE id=?',key);
       if(receipt?.state==='completed')return receipt.payload;
+      const identity=meetingIdentity(input.url);
+      if(identity){
+        identityKey='meeting-url-'+await hash(connection.user_id+':'+identity.key);
+        releaseIdentity=await this.store.lease(identityKey,180000);
+        const shared=await this.store.one("SELECT * FROM pa_receipts WHERE id=? AND user_id=? AND state='completed'",identityKey,connection.user_id);
+        let reused=shared?.payload;
+        if(!reused){
+          // Adopt completed pre-upgrade meetings without rewriting their tasks.
+          const candidates=await this.store.all("SELECT * FROM pa_tasks WHERE user_id=? AND meeting_key<>? AND instr(json_extract(payload,'$.meetingUrl'),?)>0 LIMIT 101",connection.user_id,key,identity.lookup);
+          if(candidates.length>100)throw new Fault(409,'meeting_identity_requires_review');
+          const matches=candidates.filter(t=>meetingIdentity(t.payload.meetingUrl)?.key===identity.key);
+          for(const original of new Set(matches.map(t=>t.meeting_key))){
+            const prior=await this.store.one('SELECT state FROM pa_receipts WHERE id=? AND user_id=?',original,connection.user_id);
+            if(prior?.state!=='completed')throw new Fault(409,'busy_retry_later');
+          }
+          if(matches.length)reused={taskIds:matches.map(t=>t.id),actions:[],reused:true};
+        }
+        if(reused){await this.store.receipt(identityKey,connection.user_id,reused,'completed');await this.store.receipt(key,connection.user_id,reused,'completed');return reused;}
+      }
       const actions=receipt?.payload.actions??(input.sourceKind==='meeting_todos'?await extractGrounded(this,connection.user_id,input):await this.extract(input.transcript,connection.user_id));
       await this.store.receipt(key,connection.user_id,{actions},'processing');
       const projects=(await this.store.all('SELECT * FROM pa_projects WHERE user_id=? AND active=1',connection.user_id)).filter(p=>p.binding?.sourceEnabled);
@@ -280,12 +313,13 @@ export class Platform {
       for(const [index,action]of actions.entries()){
         const project=matchProject({...action,context:input.title},projects);
         const id='task-'+await hash(key+':'+index);
-        const task={...action,id,userId:connection.user_id,projectId:project?.id??null,meetingKey:key,meetingTitle:input.title,meetingUrl:input.url??'',...(input.sourceKind==='meeting_todos'?{sourceKind:'meeting_todos',sourceTodoIds:input.sourceTodoIds??[]}:{}),externalCreateId:crypto.randomUUID(),createdAt:this.now()};
+        const task={...action,id,userId:connection.user_id,projectId:project?.id??null,sourceConnectionId:connection.id,projectClarificationReason:project?null:'无法从这条待办唯一确定项目，请选择所属项目；会议中其他项目的要求不会自动套用。',meetingKey:key,meetingTitle:input.title,meetingUrl:input.url??'',...(input.sourceKind==='meeting_todos'?{sourceKind:'meeting_todos',sourceTodoIds:input.sourceTodoIds??[]}:{}),externalCreateId:crypto.randomUUID(),createdAt:this.now()};
         await this.store.putTask(task,!project?'needs_project':action.requiresClarification||!action.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');ids.push(id);
       }
       const result={taskIds:ids,actions};await this.store.receipt(key,connection.user_id,result,'completed');
+      if(identityKey)await this.store.receipt(identityKey,connection.user_id,result,'completed');
       await this.store.run('UPDATE pa_connections SET synced_at=?,error=NULL WHERE id=?',this.now(),connection.id);return result;
-    }catch(error){await this.store.run('UPDATE pa_connections SET error=? WHERE id=?',error.code??'ingestion_failed',connection.id);throw error;}finally{await release();}
+    }catch(error){await this.store.run('UPDATE pa_connections SET error=? WHERE id=?',error.code??'ingestion_failed',connection.id);throw error;}finally{await releaseIdentity?.();await release();}
   }
   async approve(user,id,input){
     const row=await this.store.own('tasks',id,user);
@@ -296,10 +330,21 @@ export class Platform {
     if(!p.active||!p.binding)throw new Fault(409,'project_binding_required');
     if(row.payload.requiresClarification&&!Array.isArray(input.acceptance))throw new Fault(400,'acceptance_required');
     if(Array.isArray(input.acceptance)){
+      delete row.payload.fidelityReview;
       row.payload.acceptance=input.acceptance.filter(a=>typeof a==='string'&&a.trim());
       if(row.payload.fidelityVersion===1){row.payload.sourceEvidence=row.payload.acceptance.map((quote,i)=>({sourceId:'user:'+i,kind:'user_confirmation',title:'用户确认',quote}));row.payload.requiresClarification=false;row.payload.requirementsConfirmedAt=this.now();}
     }
     if(!row.payload.acceptance.length)throw new Fault(400,'acceptance_required');
+    if(input.restart===true){
+      if(row.status!=='failed'||!row.payload.githubRunId||row.payload.result)throw new Fault(409,'restart_requires_failed_run');
+      if(!p.binding.runnerReady)throw new Fault(409,'runner_installation_required');
+      const gh=await this.store.own('connections',p.binding.githubConnectionId,user);
+      const run=await this.providers.gh(await this.access(gh),`/repos/${p.binding.repo}/actions/runs/${row.payload.githubRunId}`);
+      if(run.status!=='completed'||run.conclusion==='success')throw new Fault(409,'run_not_failed');
+      row.payload.rejectedRuns=[...(row.payload.rejectedRuns??[]),{id:row.payload.githubRunId,reason:'explicit_configuration_retry'}];
+      delete row.payload.githubRunId;delete row.payload.runUrl;delete row.payload.retryAfter;
+      row.payload.error=null;await this.store.saveTask(row,'queued');return;
+    }
     if(row.status==='failed'&&row.payload.githubRunId&&!row.payload.result){
       const gh=await this.store.own('connections',p.binding.githubConnectionId,user);
       row.payload.retryAfter=this.now()+60000;row.payload.error=null;await this.store.saveTask(row,'running');

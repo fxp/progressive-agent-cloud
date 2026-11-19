@@ -33,7 +33,18 @@ export function matchProject(action, projects) {
   const explicit = projects.filter(p => action.projectId && action.projectId === p.id);
   if (explicit.length === 1) return explicit[0];
   const normalize = s => String(s).normalize('NFKC').toLowerCase().replace(/[\s\p{P}]/gu, '');
-  const text = normalize([action.project, action.title, action.goal, action.context].filter(Boolean).join(' '));
-  const hits = projects.filter(p => [p.name, ...(p.binding?.aliases ?? [])].some(name => normalize(name).length >= 3 && text.includes(normalize(name))));
-  return hits.length === 1 ? hits[0] : null;
+  const mentions=(text,name)=>{
+    if(normalize(name).length<3)return false;
+    const parts=String(name).normalize('NFKC').toLowerCase().split(/[\s\p{P}]+/u).filter(Boolean);
+    const pattern=parts.map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[\\s\\p{P}]*');
+    return new RegExp((/^[a-z0-9]/.test(parts[0])?'(?<![a-z0-9])':'')+pattern+(/[a-z0-9]$/.test(parts.at(-1))?'(?![a-z0-9])':''),'u').test(String(text).normalize('NFKC').toLowerCase());
+  };
+  const hits = text => projects.filter(p => [p.name, ...(p.binding?.aliases ?? [])].some(name => mentions(text,name)));
+  // A model's guessed project and a multi-project meeting title must never
+  // override the TODO that actually initiated the work.
+  const own = hits([action.evidence, action.title, action.goal].filter(Boolean).join('\n'));
+  if(own.length)return own.length===1?own[0]:null;
+  if(action.project&&hits(action.project).length!==1)return null;
+  const context=hits(action.context??'');
+  return context.length===1?context[0]:null;
 }
