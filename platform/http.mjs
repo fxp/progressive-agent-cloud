@@ -99,6 +99,14 @@ export async function route(request,env,runnerSource,options={}){
       });return json(state);
     }
     let m;
+    if(path==='/api/meetings/recent'&&request.method==='GET'){
+      const source=await p.store.connection(user,'feishu');
+      if(source?.status!=='connected'||!source.credential)throw new Fault(409,'meeting_authorization_required');
+      const cursor=await p.store.one('SELECT enrolled_at,last_run_at,error FROM pa_sources WHERE connection_id=? AND user_id=?',source.id,user);
+      const until=p.now(),since=Math.max(url.searchParams.get('scope')==='new'?(cursor?.enrolled_at??until):0,until-7*86400000);
+      const page=await p.providers.meetings(await p.access(source),source.identity.id,{since,until});
+      return json({items:page.items,hasMore:!!page.nextPage,since,until,source:cursor});
+    }
     if(path==='/api/check'&&request.method==='POST')return json(await enqueueUser(p,user,{reason:'manual'}));
     if(path==='/api/agents/bigmodel/settings'&&request.method==='POST'){
       await p.saveAgent(user,await body(request));const changed=await execution.refreshAgentSecrets(user);

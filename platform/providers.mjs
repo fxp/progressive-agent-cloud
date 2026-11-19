@@ -53,7 +53,7 @@ export class Providers {
       const id=/^[a-zA-Z0-9]{12,64}$/.test(item.token??'')?item.token:fromLink;
       if(!id)continue;
       const host=link?.protocol==='https:'&&/^(?:[a-z0-9-]+\.)*feishu\.cn$/.test(link.hostname)?link.hostname:'feishu.cn';
-      const title=String(item.display_info??item.title??item.topic??meta.title??'飞书会议').replace(/<[^>]*>/g,' ').split(/\s*(?:关键词|所有者|开始时间|时长|Keywords?|Owner)\s*[:：]/i)[0].replace(/\s+/g,' ').trim().slice(0,200);
+      const title=String(item.display_info??item.title??item.topic??meta.title??'飞书会议').replace(/&(amp|lt|gt|quot|apos|#39);/g,(_,entity)=>({amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",'#39':"'"}[entity])).replace(/<[^>]*>/g,' ').split(/\s*(?:关键词|所有者|开始时间|时长|Keywords?|Owner)\s*[:：]/i)[0].replace(/\s+/g,' ').trim().slice(0,200);
       items.push({externalId:id,title,url:'https://'+host+'/minutes/'+id});
     }
     return {items,nextPage:data.has_more?data.page_token:null};

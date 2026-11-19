@@ -35,5 +35,5 @@ export async function scanSource(p,connection){
   if(cursor.offset>=page.items.length){cursor.offset=0;if(page.nextPage){if(page.nextPage===cursor.pageToken)throw new Fault(502,'invalid_pagination');cursor.pageToken=page.nextPage;}else{delete cursor.pageToken;delete cursor.until;}}
   await p.store.run('UPDATE pa_sources SET cursor=?,last_run_at=?,error=NULL WHERE connection_id=? AND user_id=?',JSON.stringify(cursor),p.now(),connection.id,user);
   await p.store.run('UPDATE pa_connections SET synced_at=?,error=NULL WHERE id=? AND user_id=?',p.now(),connection.id,user);
-  return {ingested};
+  return {ingested,discovered:page.items.length};
 }

@@ -160,3 +160,14 @@ test('Feishu authorization failures suspend only the affected source while other
  assert.deepEqual(outcomes,['user-A','user-B']);assert.equal((await f.p.store.connection('user-A','feishu')).status,'needs_auth');assert.equal((await f.p.store.connection('user-B','feishu')).status,'connected');
  f.env.DB.raw.close();
 });
+
+
+test('recent meetings use only the signed-in users Feishu grant and bounded search window',async()=>{
+ const f=fixture();await f.setup('A');await f.setup('B');const calls=[];
+ f.providers.meetings=async(token,owner,window)=>{calls.push({token,owner,window});return {items:[{externalId:'MeetingA00001',title:'Private A'}],nextPage:null};};
+ const request=path=>new Request(f.env.PA_ORIGIN+path,{headers:{cookie:cookie}}),cookie=await f.cookie('A');
+ const response=await route(request('/api/meetings/recent?scope=new'),f.env,'',{providers:f.providers,fetcher:f.fetcher,now:f.p.now});
+ assert.equal(response.status,200);assert.equal(calls.length,1);assert.equal(calls[0].token,'feishu:A');assert.equal(calls[0].owner,'ou_A');assert.equal(calls[0].window.since,1795080000000);
+ const body=await response.json();assert.equal(body.items[0].title,'Private A');assert.equal(JSON.stringify(body).includes('feishu:A'),false);
+ assert.equal((await route(new Request(f.env.PA_ORIGIN+'/api/meetings/recent'),f.env,'')).status,401);f.env.DB.raw.close();
+});
