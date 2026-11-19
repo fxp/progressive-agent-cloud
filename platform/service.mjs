@@ -2,6 +2,7 @@ import {storeConfig,assertTenant,subscribeMinutes} from './feishu-store.mjs';
 import {catalog, oauthProviders} from './catalog.mjs';
 import {Providers} from './providers.mjs';
 import {Store} from './store.mjs';
+import {extractGrounded} from './fidelity.mjs';
 import {Fault, random, hash, challenge, seal, open, requireValue, validateBinding, matchProject} from './security.mjs';
 
 export class Platform {
@@ -242,7 +243,7 @@ export class Platform {
       const project=matchProject({...row.payload,context:row.payload.meetingTitle},projects);
       if(!project||row.payload.original||row.payload.session)continue;
       row.project_id=row.payload.projectId=project.id;
-      await this.store.saveTask(row,!row.payload.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');
+      await this.store.saveTask(row,row.payload.requiresClarification||!row.payload.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');
     }
   }
   async unbind(user,id){
@@ -272,7 +273,7 @@ export class Platform {
     try{
       const receipt=await this.store.one('SELECT * FROM pa_receipts WHERE id=?',key);
       if(receipt?.state==='completed')return receipt.payload;
-      const actions=receipt?.payload.actions??await this.extract(input.transcript,connection.user_id);
+      const actions=receipt?.payload.actions??(input.sourceKind==='meeting_todos'?await extractGrounded(this,connection.user_id,input):await this.extract(input.transcript,connection.user_id));
       await this.store.receipt(key,connection.user_id,{actions},'processing');
       const projects=(await this.store.all('SELECT * FROM pa_projects WHERE user_id=? AND active=1',connection.user_id)).filter(p=>p.binding?.sourceEnabled);
       const ids=[];
@@ -280,7 +281,7 @@ export class Platform {
         const project=matchProject({...action,context:input.title},projects);
         const id='task-'+await hash(key+':'+index);
         const task={...action,id,userId:connection.user_id,projectId:project?.id??null,meetingKey:key,meetingTitle:input.title,meetingUrl:input.url??'',...(input.sourceKind==='meeting_todos'?{sourceKind:'meeting_todos',sourceTodoIds:input.sourceTodoIds??[]}:{}),externalCreateId:crypto.randomUUID(),createdAt:this.now()};
-        await this.store.putTask(task,!project?'needs_project':!action.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');ids.push(id);
+        await this.store.putTask(task,!project?'needs_project':action.requiresClarification||!action.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');ids.push(id);
       }
       const result={taskIds:ids,actions};await this.store.receipt(key,connection.user_id,result,'completed');
       await this.store.run('UPDATE pa_connections SET synced_at=?,error=NULL WHERE id=?',this.now(),connection.id);return result;
@@ -293,7 +294,11 @@ export class Platform {
     if(input.projectId)row.project_id=row.payload.projectId=input.projectId;
     const p=await this.store.own('projects',row.project_id??'',user);
     if(!p.active||!p.binding)throw new Fault(409,'project_binding_required');
-    if(Array.isArray(input.acceptance))row.payload.acceptance=input.acceptance.filter(a=>typeof a==='string'&&a.trim());
+    if(row.payload.requiresClarification&&!Array.isArray(input.acceptance))throw new Fault(400,'acceptance_required');
+    if(Array.isArray(input.acceptance)){
+      row.payload.acceptance=input.acceptance.filter(a=>typeof a==='string'&&a.trim());
+      if(row.payload.fidelityVersion===1){row.payload.sourceEvidence=row.payload.acceptance.map((quote,i)=>({sourceId:'user:'+i,kind:'user_confirmation',title:'用户确认',quote}));row.payload.requiresClarification=false;row.payload.requirementsConfirmedAt=this.now();}
+    }
     if(!row.payload.acceptance.length)throw new Fault(400,'acceptance_required');
     if(row.status==='failed'&&row.payload.githubRunId&&!row.payload.result){
       const gh=await this.store.own('connections',p.binding.githubConnectionId,user);

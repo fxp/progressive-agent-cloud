@@ -1,5 +1,6 @@
 import sealedbox from 'tweetnacl-sealedbox-js';
 import {Fault, random, hash, seal, open, b64, unb64} from './security.mjs';
+import {reviewChange} from './fidelity.mjs';
 
 export const WORKFLOW_PATH='.github/workflows/progressive-agent.yml';
 export function workflow(){return `# Managed by Progressive Agent Connector v1
@@ -173,6 +174,7 @@ export class Execution {
   }
   async advance(row){
     if(row.payload.retryAfter>this.p.now())return;
+    if(row.payload.requiresClarification){await this.s.saveTask(row,'needs_info');return;}
     const p=await this.s.own('projects',row.project_id,row.user_id);const b=p.binding;
     const meeting=await this.s.connection(row.user_id,'feishu');if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(409,'meeting_connector_not_active');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}
     if(!p.active||!b)throw new Fault(409,'project_not_available');
@@ -283,6 +285,11 @@ export class Execution {
         const installed=await gh('/contents/'+WORKFLOW_PATH+'?ref='+run.head_sha);
         const installedRunner=await gh('/contents/.github/progressive-agent/runner.mjs?ref='+run.head_sha);
         if(run.path!==WORKFLOW_PATH||run.display_title!=='PA '+row.id||run.event!=='workflow_dispatch'||installed.sha!==p.binding.workflowSha||installedRunner.sha!==p.binding.runnerSha||!jobs.jobs.some(j=>j.name==='verify'&&j.conclusion==='success'))throw new Fault(409,'verification_not_confirmed');
+        const fidelity=await reviewChange(this.p,p.user_id,row.payload,input.files);
+        if(fidelity){
+          row.payload.fidelityReview=fidelity;await this.s.saveTask(row);
+          if(!fidelity.approved)throw new Fault(409,'requirement_fidelity_failed');
+        }
         const branch='codex/pa-'+row.id.slice(-16);let head;
         try{head=(await gh('/git/ref/heads/'+branch)).object.sha;}catch(e){if(e.code!=='provider_http_404')throw e;}
         if(head){

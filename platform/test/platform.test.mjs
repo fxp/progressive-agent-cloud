@@ -80,6 +80,23 @@ async function queued(f){
  await f.ex.checkpoint(project,{taskId:id,runId:'9',session:{id:'session-1',base},patchChecksum});
  return {project,meeting,input,id,complete:{taskId:id,runId:'9',base,patchChecksum,files:[{path:'src/app.js',mode:'100644',content:Buffer.from('export const search=true;').toString('base64')}]}};
 }
+for(const approved of [false,true])test('evidenced task publication '+(approved?'reuses a successful review across replays':'blocks an unsupported feature before any GitHub write'),async()=>{
+ const f=fixture(),t=await queued(f);let reviews=0;
+ const originalFetch=f.p.fetch;f.p.fetch=async(url,options)=>{
+  if(url.includes('/chat/completions')){reviews++;assert.match(JSON.parse(options.body).messages[0].content,/PA_FIDELITY_code/);return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({approved,violations:approved?[]:['An extra option was not requested']})}}]});}
+  return originalFetch(url,options);
+ };
+ const row=await f.p.store.own('tasks',t.id,owner);row.payload.fidelityVersion=1;row.payload.sourceEvidence=[{sourceId:'chapter:0',kind:'chapter',quote:'Only the requested search feature is allowed.'}];await f.p.store.saveTask(row);
+ if(approved){await f.ex.complete(t.project,t.complete);for(let i=0;i<2;i++)await f.ex.complete(t.project,t.complete);assert.equal(f.counters.pr,1);assert.equal(f.counters.backfill,1);}
+ else{await assert.rejects(()=>f.ex.complete(t.project,t.complete),{code:'requirement_fidelity_failed'});assert.equal(f.counters.pr,0);assert.equal(f.counters.blobs,0);assert.equal(f.counters.backfill,0);}
+ assert.equal(reviews,1);f.env.DB.raw.close();
+});
+test('uncertain note supplementation remains needs_info even if a queued row is encountered',async()=>{
+ const f=fixture(),{project,meeting}=await f.setup(),text='Focus Board should add title search.';
+ f.p.fetch=async(url,options)=>{const extracting=JSON.parse(options.body).messages[0].content.startsWith('PA_FIDELITY_extract');return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(extracting?{actions:[{todoIds:['t1'],project:'Focus Board',criteria:[{source:'todo:t1',quote:text}]}]}:{reviews:[{index:0,approved:false,reason:'Missing search rules'}]})}}]});};
+ const result=await f.p.ingest(meeting,{externalId:'uncertain',title:'Focus Board',transcript:text,sourceKind:'meeting_todos',sourceTodos:[{id:'t1',content:text}],sourceNotes:[]});
+ const row=await f.p.store.own('tasks',result.taskIds[0],owner);assert.equal(row.status,'needs_info');await f.p.store.saveTask(row,'queued');await f.ex.tick();assert.equal((await f.p.store.own('tasks',row.id,owner)).status,'needs_info');assert.equal(f.counters.dispatch,0);assert.equal(f.counters.issues,0);f.env.DB.raw.close();
+});
 for(const provider of ['github','linear'])test(`${provider}: OAuth → sync → bind → meeting → cloud run → PR → original requirement; replay twice`,async()=>{
  const f=fixture(provider);const flow=await queued(f);
  const result=await f.ex.complete(flow.project,flow.complete);assert.match(result.pr,/pull\/1$/);

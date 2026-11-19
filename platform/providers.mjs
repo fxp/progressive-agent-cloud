@@ -1,4 +1,5 @@
 import {Fault} from './security.mjs';
+import {noteSources} from './fidelity.mjs';
 
 export class Providers {
   constructor(fetcher = fetch) { this.fetch = fetcher.bind(globalThis); }
@@ -71,11 +72,11 @@ export class Providers {
   async todoEvidence(token,id){
     if(!/^[a-zA-Z0-9]{12,64}$/.test(id))throw new Fault(400,'invalid_meeting_id');
     const data=await this.feishu(token,'/minutes/v1/minutes/'+id+'/artifacts');
-    // This API also returns other AI artifacts. Retain only unfinished todos;
-    // never persist or forward its transcript/summary fields in todo mode.
+    // Todos start tasks; notes can only supply cited acceptance constraints.
+    // The transcript field is never retained or sent to extraction.
     if(!Array.isArray(data.minute_todos)||!data.minute_todos.length)throw new Fault(409,'meeting_todos_not_ready');
     const todos=data.minute_todos.filter(todo=>todo&&todo.is_done!==true&&typeof todo.content==='string'&&todo.content.trim()).map(todo=>({id:typeof todo.todo_id==='string'?todo.todo_id:null,content:todo.content.trim(),assignees:Array.isArray(todo.assignees)?todo.assignees.filter(a=>typeof a==='string'):[]}));
-    return {transcript:todos.map(todo=>todo.content).join('\n\n'),sourceKind:'meeting_todos',sourceTodoIds:todos.map(todo=>todo.id).filter(Boolean),empty:todos.length===0};
+    return {transcript:todos.map(todo=>todo.content).join('\n\n'),sourceKind:'meeting_todos',sourceTodoIds:todos.map(todo=>todo.id).filter(Boolean),sourceTodos:todos.map((t,i)=>({id:t.id??'todo-'+i,content:t.content})),sourceNotes:noteSources(data),empty:todos.length===0};
   }
   async projects(provider, token) {
     if (provider === 'linear') {
@@ -108,7 +109,7 @@ export class Providers {
   }
   async issue(provider, token, project, task) {
     const marker = `<!-- progressive-agent:${task.id} -->`;
-    const description = [task.goal,'', '验收条件',...task.acceptance.map(a=>'- '+a),'', '来源会议：'+task.meetingUrl,'', (task.sourceKind==='meeting_todos'?'纪要待办依据：':'原话依据：')+task.evidence,'',marker].join('\n');
+    const description = [task.goal,'', '验收条件',...task.acceptance.map(a=>'- '+a),'', '来源会议：'+task.meetingUrl,'', (task.sourceKind==='meeting_todos'?'纪要待办依据：':'原话依据：')+task.evidence,...(task.sourceEvidence?.length?['','验收依据（逐字引用）：',...task.sourceEvidence.map(c=>`- [${c.sourceId}${c.title?' · '+c.title:''}] ${c.quote}`)]:[]),'',marker].join('\n');
     if (provider==='linear') {
       if (task.issueUrl) {
         const identifier=/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z0-9-]+)(?:\/|$)/.exec(task.issueUrl)?.[1];
@@ -145,7 +146,7 @@ export class Providers {
   }
   async backfill(provider, token, project, task) {
     const marker=`<!-- progressive-agent:${task.id}:pr -->`;
-    const body=[`开发结果：${task.result.pr}`,`测试通过：${task.result.tests}`,`提交：${task.result.commit}`,`运行：${task.result.runUrl}`,'草稿 PR 已创建，等待代码审阅。',marker].join('\n\n');
+    const body=[`开发结果：${task.result.pr}`,`测试通过：${task.result.tests}`,`提交：${task.result.commit}`,`运行：${task.result.runUrl}`,...(task.fidelityReview?.approved?['需求证据核对：通过（逐项核对原文约束及代码，未发现新增功能）。']:[]),'草稿 PR 已创建，等待代码审阅。',marker].join('\n\n');
     if(provider==='github'){
       for(let page=1;page<=100;page++){
         const rows=await this.gh(token,`/repos/${project.binding.repo}/issues/${task.original.id}/comments?per_page=100&page=${page}`);
