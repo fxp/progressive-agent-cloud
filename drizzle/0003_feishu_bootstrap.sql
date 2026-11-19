@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS pa_feishu_setups (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL, credential TEXT, expires_at INTEGER NOT NULL, next_poll_at INTEGER NOT NULL, error TEXT, updated_at INTEGER NOT NULL);

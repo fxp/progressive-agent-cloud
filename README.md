@@ -10,7 +10,7 @@ Turn meeting decisions into reviewed code. Connect your own Feishu, GitHub and L
 2. Authorize your Feishu account. Connect Linear if your requirements live there.
 3. Connect your own BigModel API key with model and Managed Agent access.
 4. Select an imported project, bind its writable GitHub repository and Agent, review the validation commands and allowed files, and save. The installer adds the cloud workflow and encrypted repository secrets.
-5. The latest readable meeting is checked. Subsequent new meetings are discovered every five minutes. Explicit, unambiguous requirements enter development automatically when that project enables automatic execution.
+5. Scan-created Feishu connections discover new meetings generated after authorization every five minutes and use their AI-generated TODOs. Legacy configured connections can also use transcript mode. Explicit, unambiguous requirements enter development automatically when that project enables automatic execution.
 
 BigModel edits a Git bundle in an isolated cloud sandbox. A separate GitHub runner applies the patch and runs your validation commands without model or publication credentials. After verification, a draft PR and its test links are written back to the original GitHub or Linear issue. A draft PR waits for human review; it is not automatically merged.
 
@@ -43,12 +43,13 @@ Follow [SELF_HOST.md](docs/SELF_HOST.md) for callback URLs, permissions and secr
 - Per-user encrypted Agent keys; installed repository secrets never use another user's key.
 - A Cloudflare Queue job for each user, independent retries and a dead-letter queue.
 - Durable meeting receipts, task leases, execution/session reconciliation and idempotent PR/result comments.
+- Cited acceptance conditions supplemented from meeting notes, independent grounding and code reviews, and one bounded correction without creating another task or Agent session.
 - Repository claims prevent two workspaces from overwriting one repository's execution secrets.
 - Onboarding, automatic progress refresh, manual recheck, reauthorization and disconnect controls.
 
 First release supports Feishu meetings, GitHub repositories and BigModel Managed Agent. Each repository is managed by one project. Cross-provider project merging, shared-team roles, additional Agent adapters, provider webhooks and PR-merge lifecycle updates are future work.
 
-Feishu custom apps can authorize only users within their published availability. A hosted service serving unrelated organizations needs a distributed/store application approved by Feishu; self-hosters can use their own organization app. The UI also supports user-owned OAuth applications. Linear's hosted OAuth app must have public availability to support other workspaces.
+Feishu custom apps can authorize only users within their published availability. The scan onboarding flow creates an organization-owned app without users copying credentials, subject to company policies. Serving unrelated organizations through one shared application requires Feishu Store approval; self-hosters can also configure their organization app. The UI also supports user-owned OAuth applications. Linear's hosted OAuth app must have public availability to support other workspaces.
 
 ## Development
 

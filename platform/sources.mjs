@@ -22,13 +22,16 @@ export async function scanSource(p,connection){
       if(!cursor.bootstrapDone){cursor.bootstrapDone=true;cursor.offset=0;delete cursor.until;delete cursor.pageToken;break;}
       continue;
     }
-    let transcript;
-    try{transcript=await p.providers.transcript(token,item.externalId);}catch(error){
-      if(error.code==='transcript_not_ready'||/^feishu_api_209100[2-5]$/.test(error.code??'')){if(++reads>=5)break;continue;}
+    let evidence;
+    try{evidence=current.identity.meetingContent==='todos'?await p.providers.todoEvidence(token,item.externalId):{transcript:await p.providers.transcript(token,item.externalId)};}catch(error){
+      if(['transcript_not_ready','meeting_todos_not_ready'].includes(error.code)||/^feishu_api_209100[2-5]$/.test(error.code??'')){if(++reads>=5)break;continue;}
       throw error;
     }
-    if(!transcript){if(++reads>=5)break;continue;}
-    await p.ingest(current,{...item,sourceOpenId:current.identity.id,transcript});ingested++;
+    if(evidence.empty){await p.store.receipt(key,user,{taskIds:[],actions:[]},'completed');}
+    else{
+      if(!evidence.transcript){if(++reads>=5)break;continue;}
+      await p.ingest(current,{...item,sourceOpenId:current.identity.id,...evidence});ingested++;
+    }
     if(!cursor.bootstrapDone){cursor.bootstrapDone=true;cursor.offset=0;delete cursor.until;delete cursor.pageToken;}
     // One model extraction per user job bounds latency and cost. The next
     // page offset remains durable; an empty round can skip many receipts.

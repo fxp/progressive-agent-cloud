@@ -7,22 +7,24 @@ import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 const runner=fileURLToPath(new URL('../runner.mjs',import.meta.url));
-test('prepare sends a task in the Managed Agent events envelope and resumes the saved session',()=>{
+for(const repairing of [false,true])test(repairing?'repair resumes the same session, sends evidence feedback and ignores the rejected patch':'prepare sends a task in the Managed Agent events envelope and resumes the saved session',()=>{
  const root=mkdtempSync(join(tmpdir(),'pa-prepare-test-')),repo=join(root,'repo'),shim=join(root,'fetch.mjs'),output=join(root,'output');mkdirSync(repo);
  const git=args=>execFileSync('git',args,{cwd:repo,encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
  try{
   git(['init','-b','main']);git(['config','user.email','test@example.invalid']);git(['config','user.name','Test']);
   writeFileSync(join(repo,'app.js'),'export const ready=true;');git(['add','.']);git(['commit','-m','base']);const base=git(['rev-parse','HEAD']);
-  const task={id:'task-'+'d'.repeat(64),title:'Add filter',goal:'Filter open tasks',acceptance:['Empty results'],session:{id:'session',base},binding:{repo:'test/repo',allowedPaths:['src/'],validation:['npm test']}};
+  const rejectedPatch='diff --git a/src/task.js b/src/task.js\nrejected version\n';
+ const task={...(repairing?{repairRevision:1,repairFeedback:['Missing UI constraint tests'],previousRejectedChecksum:createHash('sha256').update(rejectedPatch).digest('hex')}:{}),id:'task-'+'d'.repeat(64),title:'Add filter',goal:'Filter open tasks',acceptance:['Empty results'],session:{id:'session',base},binding:{repo:'test/repo',allowedPaths:['src/'],validation:['npm test']}};
   writeFileSync(shim,`import assert from 'node:assert/strict';let sent;globalThis.fetch=async(url,options={})=>{
    const body=options.body?JSON.parse(options.body):null;
    if(url.endsWith('/claim'))return Response.json(${JSON.stringify(task)});
    if(url.endsWith('/checkpoint'))return Response.json({saved:true});
    if(url.includes('/sessions/session/events')){
-    if(options.method==='POST'){assert.equal(body.events.length,1);sent=body.events[0];assert.equal(sent.type,'user.message');assert.ok(sent.content[0].text.startsWith('PA_TASK '));assert.ok(!sent.content[0].text.includes('private-model-secret'));return Response.json({});}
+    if(options.method==='POST'){assert.equal(body.events.length,1);sent=body.events[0];assert.equal(sent.type,'user.message');assert.ok(sent.content[0].text.startsWith('PA_TASK '));assert.ok(!sent.content[0].text.includes('private-model-secret'));const spec=JSON.parse(sent.content[0].text.split('\\n').slice(1).join('\\n'));if(${repairing}){assert.ok(sent.content[0].text.startsWith('PA_TASK '+${JSON.stringify(task.id)}+':repair:1'));assert.deepEqual(spec.repair.feedback,['Missing UI constraint tests']);}return Response.json({});}
     return Response.json({data:sent?[sent,{type:'agent.tool_result'},{type:'session.status_idle'}]:[]});
    }
-   if(url.includes('/files?'))return Response.json({data:[{id:'patch',filename:'change.patch'}]});
+   if(url.includes('/files?'))return Response.json({data:[{id:'old',filename:'change.patch'},{id:'patch',filename:'change.patch'}]});
+   if(url.endsWith('/files/old/content'))return new Response(${JSON.stringify(rejectedPatch)});
    if(url.endsWith('/files/patch/content'))return new Response('diff --git a/src/task.js b/src/task.js\\n');
    throw Error('Unexpected request '+url);
   };`);

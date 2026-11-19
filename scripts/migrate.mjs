@@ -6,4 +6,5 @@ const result=JSON.parse(run(['--json','--command',"SELECT name FROM sqlite_maste
 if(!result[0]?.results?.length)process.stdout.write(run(['--file','drizzle/0000_connectors.sql']));
 process.stdout.write(run(['--file','drizzle/0001_multiuser.sql']));
 process.stdout.write(run(['--file','drizzle/0002_feishu_store.sql']));
+process.stdout.write(run(['--file','drizzle/0003_feishu_bootstrap.sql']));
 console.log('Database migrations applied. Existing data preserved.');

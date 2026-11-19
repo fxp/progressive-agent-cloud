@@ -41,9 +41,13 @@ Create an OAuth app at [Linear API settings](https://linear.app/settings/api/app
 
 ### Feishu
 
+The workbench now offers **Scan to connect Feishu**, backed by the official app-registration and device-authorization protocols. Users confirm application creation and separately authorize their own Minutes data; they do not copy app credentials or configure callbacks. This creates an organization-owned custom app rather than a shared Store app. New scan connections use meeting TODOs through the AI-artifact permission instead of transcript export. In the tested organization, a non-administrator member successfully authorized this mode, and native cloud discovery created and dispatched a task from a new meeting. Company policies still apply; TODO summaries may omit meeting details. See [scan onboarding](https://github.com/fxp/progressive-agent-cloud/blob/main/docs/FEISHU_SCAN.md).
+
 There are two distinct discovery modes. A shared Store app is **not enabled by merely copying a custom app's scopes**. See [Feishu Store rollout](https://github.com/fxp/progressive-agent-cloud/blob/main/docs/FEISHU_STORE.md) for the opt-in implementation, platform checks, and remaining release gates.
 
 #### Organization-owned custom app
+
+The following manual configuration is an advanced fallback. The scan flow uses device authorization and does not need a redirect URL or application-management scope. Its completed connection enrolls only meetings generated after authorization, rather than importing historical meetings.
 
 Create or configure an app in [Feishu Developer Console](https://open.feishu.cn/app). Add callback `https://YOUR-ORIGIN/api/oauth/feishu/callback` in Security Settings. Enable and publish these user scopes: `auth:user.id:read`, `minutes:minutes.search:read`, `minutes:minutes.transcript:export`, `offline_access`. User authorization must return a refresh token.
 
