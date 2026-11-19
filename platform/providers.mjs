@@ -58,6 +58,12 @@ export class Providers {
     }
     return {items,nextPage:data.has_more?data.page_token:null};
   }
+  async minuteInfo(token,id){
+    if(!/^[A-Za-z0-9]{12,64}$/.test(id))throw new Fault(400,'invalid_meeting_id');
+    const data=await this.feishu(token,'/minutes/v1/minutes/'+id),minute=data.minute??data;
+    let url;try{const parsed=new URL(minute.url);if(parsed.protocol==='https:'&&/^(?:[a-z0-9-]+\.)*feishu\.cn$/.test(parsed.hostname)&&parsed.pathname==='/minutes/'+id)url=parsed.href;}catch{}
+    return {externalId:id,title:String(minute.title??'飞书会议').slice(0,200),url:url??'https://feishu.cn/minutes/'+id};
+  }
   transcript(token,id){
     if(!/^[a-zA-Z0-9]{12,64}$/.test(id))throw new Fault(400,'invalid_meeting_id');
     return this.feishu(token,'/minutes/v1/minutes/'+id+'/transcript?need_speaker=true&need_timestamp=true&file_format=txt',undefined,{raw:true});

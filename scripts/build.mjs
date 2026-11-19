@@ -9,7 +9,7 @@ function collect(dir,prefix=''){
     if(entry.name==='server'||entry.name.startsWith('.'))continue;
     const path=join(dir,entry.name),name=prefix+'/'+entry.name;
     if(entry.isDirectory())collect(path,name);
-    else assets[name]={body:readFileSync(path,'utf8'),type:({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.md':'text/markdown; charset=utf-8'})[extname(entry.name)]||'text/plain; charset=utf-8'};
+    else assets[name]={body:readFileSync(path,'utf8'),type:({'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.md':'text/markdown; charset=utf-8','.svg':'image/svg+xml; charset=utf-8'})[extname(entry.name)]||'text/plain; charset=utf-8'};
   }
 }
 collect(join(root,'dist'));

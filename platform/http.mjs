@@ -1,3 +1,4 @@
+import {receiveFeishu} from './feishu-store.mjs';
 import {Platform} from './service.mjs';
 import {Execution} from './execution.mjs';
 import {enqueueUser} from './scheduler.mjs';
@@ -17,6 +18,12 @@ export async function route(request,env,runnerSource,options={}){
   try{
     const p=new Platform(env,options);const execution=new Execution(p,runnerSource);
     const path=url.pathname;
+    if(path==='/api/webhooks/feishu'){
+      const result=await receiveFeishu(request,p);
+      if(result.challenge!==undefined)return json({challenge:result.challenge});
+      await Promise.allSettled((result.users??[]).map(user=>enqueueUser(p,user,{reason:'event'})));
+      return json({code:0});
+    }
     if(path.startsWith('/api/runner/')){
       if(request.method!=='POST')throw new Fault(405,'method_not_allowed');
       const input=await body(request);
@@ -103,6 +110,7 @@ export async function route(request,env,runnerSource,options={}){
       const source=await p.store.connection(user,'feishu');
       if(source?.status!=='connected'||!source.credential)throw new Fault(409,'meeting_authorization_required');
       const cursor=await p.store.one('SELECT enrolled_at,last_run_at,error FROM pa_sources WHERE connection_id=? AND user_id=?',source.id,user);
+      if(source.identity.discovery==='events'){const items=await p.store.all('SELECT minute_token AS externalId,title,url,state,error,received_at FROM pa_feishu_inbox WHERE connection_id=? AND user_id=? ORDER BY received_at DESC LIMIT 30',source.id,user);return json({items,hasMore:false,discovery:'events',source:cursor});}
       const until=p.now(),since=Math.max(url.searchParams.get('scope')==='new'?(cursor?.enrolled_at??until):0,until-7*86400000);
       const page=await p.providers.meetings(await p.access(source),source.identity.id,{since,until});
       return json({items:page.items,hasMore:!!page.nextPage,since,until,source:cursor});
@@ -114,9 +122,9 @@ export async function route(request,env,runnerSource,options={}){
     }
     if((m=/^\/api\/oauth\/(github|linear|feishu)\/(start|callback)$/.exec(path))&&request.method==='GET'){
       provider=m[1];
-      const oauthOptions={};
+      const oauthOptions=provider==='feishu'&&url.searchParams.get('app')==='store'?{store:true}:{};
       if(githubAuth&&provider==='github')oauthOptions.finalUser=async identity=>{requireAllowedLogin(env,identity.name);return user;};
-      if(m[2]==='start')return Response.redirect(await p.begin(user,provider),302);
+      if(m[2]==='start')return Response.redirect(await p.begin(user,provider,oauthOptions),302);
       await p.callback(user,provider,url.searchParams,oauthOptions);
       if(env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});
       return Response.redirect(env.PA_ORIGIN+'/app?connected='+provider,302);
