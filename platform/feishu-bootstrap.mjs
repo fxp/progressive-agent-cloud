@@ -67,7 +67,7 @@ export async function pollBootstrap(p,user,id){
    delete payload.deviceCode;delete payload.verificationUrl;
    row=await save(p,row,payload,'configuring');
   }
-  return safe(await save(p,row,payload,'ready'));
+  return safe(await save(p,row,payload,'ready'),payload);
  }finally{await release();}
 }
 export async function bootstrapOAuth(p,user,id,options={}){
@@ -105,7 +105,7 @@ async function advanceDevice(p,row,payload){
   const granted=payload.token.scope.split(/[\s,]+/),missing=config.scope.split(/\s+/).filter(scope=>!granted.includes(scope));
   if(missing.length){payload.approvalScopes=missing;throw new Fault(409,'feishu_minutes_approval_required');}
   await p.acceptFeishu(row.user_id,payload.token,config,{expectedFeishuOpenId:config.bootstrap.openId,replaceConnection:true});
-  delete payload.token;delete payload.deviceAuth;return safe(await save(p,row,payload,'completed'));
+  delete payload.token;delete payload.deviceAuth;return safe(await save(p,row,payload,'completed'),payload);
  }catch(error){
   const approval=error.code==='feishu_minutes_approval_required';
   if(approval||error.code==='feishu_offline_scope_required'){delete payload.token;delete payload.deviceAuth;}

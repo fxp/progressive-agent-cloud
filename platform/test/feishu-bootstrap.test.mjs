@@ -38,7 +38,7 @@ test('server poll timing prevents browser retries from hammering Feishu',async()
 });
 test('one-time app credentials are reused for device authorization without management APIs',async()=>{
  const f=await fixture(),setup=await startBootstrap(f.p,'A');f.advance(5000);f.confirm();
- assert.equal((await pollBootstrap(f.p,'A',setup.id)).state,'ready');
+ const ready=await pollBootstrap(f.p,'A',setup.id);assert.equal(ready.state,'ready');assert.equal(ready.readingMode,'todos');assert.equal(ready.appId,'cli_new');
  const first=await bootstrapOAuth(f.p,'A',setup.id),second=await bootstrapOAuth(f.p,'A',setup.id);
  assert.equal(first.verificationUrl,second.verificationUrl);assert.equal(first.state,'user_authorizing');assert.equal(first.readingMode,'todos');
  assert.equal(f.calls.filter(c=>c.body.action==='begin').length,1);assert.equal(f.calls.filter(c=>c.body.action==='poll').length,1);
