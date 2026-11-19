@@ -40,6 +40,14 @@ An early probe requested application-management permission for a callback. The f
 - Observe two subsequent scheduled rounds. Meeting/task/session/PR/result-comment counts must stay stable. Keep this check in the active test session rather than creating a background reminder.
 - Confirm the first user's grants and tasks remain isolated. Validate token refresh in the cloud before claiming sustained unattended use.
 
+## Second-organization acceptance
+
+A second organization was tested from an empty, isolated cloud deployment using an existing GitHub identity. Its current Feishu identity is the organization's Founder, so this is **not another ordinary-member acceptance result**. Production users, grants and bindings were kept separate; no historical credentials or task rows were copied into the test workspace.
+
+First-time GitHub login imported readable projects, the product's scan flow created a new dedicated Feishu app, and device consent activated the AI-artifact grant for the second tenant. Repo/Agent binding installed a cloud runner. Native scheduled discovery then created one task from a newly uploaded synthetic meeting, matched its project, and completed BigModel development, independent validation, a draft PR and original-issue backfill. Ten implementation tests passed. Two subsequent five-minute scheduled checks completed successfully with the same task, Agent session and workflow run (attempt 1), one draft PR and one unchanged result comment. Source-scan timestamps advanced in both rounds. Existing production connection identities and task results remained unchanged.
+
+The content check found a real limitation: the original meeting requested only All and High priority options, while the generated TODO omitted that restriction. The Agent added Normal as well. Default/filter/reset counts and empty-state behavior passed, but exact agreement with the meeting's option set **failed**. Implementation test success does not establish requirement fidelity. This first release preserves the TODO and meeting link for human review; it does not recover omitted conditions from a transcript or claim to have fixed this summarization gap.
+
 ## Official implementations
 
 - [Node SDK app registration](https://github.com/larksuite/node-sdk/blob/main/README.zh.md#一键创建应用)
