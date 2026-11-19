@@ -1,22 +1,22 @@
 # Progressive Agent
 
-Turn meeting decisions into reviewed code. Connect your own Feishu, GitHub and Linear accounts, bind a project to a repository and BigModel Managed Agent, and receive a tested draft pull request linked back to the original requirement.
+Turn meeting decisions into reviewed code. Connect meeting notes through Feishu or a Webhook, and your own GitHub, Linear or GitLab.com projects, bind a project to a repository and BigModel Managed Agent, and receive a tested draft pull request linked back to the original requirement.
 
 [Hosted workbench](https://progressive.xiaopingfeng.com/app) · [Self-hosting](docs/SELF_HOST.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md)
 
 ## Start using it
 
 1. Sign in with GitHub. Readable GitHub Projects synchronize automatically.
-2. Authorize your Feishu account. Connect Linear if your requirements live there.
+2. Authorize Feishu or create a meeting notes Webhook. Connect Linear or GitLab.com Issues if your requirements live there.
 3. Connect your own BigModel API key with model and Managed Agent access.
 4. Select an imported project, bind its writable GitHub repository and Agent, review the validation commands and allowed files, and save. The installer adds the cloud workflow and encrypted repository secrets.
 5. Scan-created Feishu connections discover new meetings generated after authorization every five minutes and use their AI-generated TODOs. Legacy configured connections can also use transcript mode. Explicit, unambiguous requirements enter development automatically when that project enables automatic execution.
 
-BigModel edits a Git bundle in an isolated cloud sandbox. A separate GitHub runner applies the patch and runs your validation commands without model or publication credentials. After verification, a draft PR and its test links are written back to the original GitHub or Linear issue. A draft PR waits for human review; it is not automatically merged.
+BigModel edits a Git bundle in an isolated cloud sandbox. A separate GitHub runner applies the patch and runs your validation commands without model or publication credentials. After verification, a draft PR and its test links are written back to the original GitHub, Linear or GitLab issue. A draft PR waits for human review; it is not automatically merged.
 
 ## Self-host
 
-Requires Node.js 22.13+ (24+ recommended), a Cloudflare account with Workers, D1 and Queues, and GitHub/Feishu OAuth applications. Linear is optional. The deployment owner configures shared OAuth applications once; individual users authorize their own accounts and supply their own Agent key.
+Requires Node.js 22.13+ (24+ recommended), a Cloudflare account with Workers, D1 and Queues, and a GitHub OAuth application. Feishu and Linear applications are optional when those sources are not used. The deployment owner configures shared OAuth applications once; individual users authorize their own accounts and supply their own Agent key.
 
 ```sh
 npm ci
@@ -47,7 +47,7 @@ Follow [SELF_HOST.md](docs/SELF_HOST.md) for callback URLs, permissions and secr
 - Repository claims prevent two workspaces from overwriting one repository's execution secrets.
 - Onboarding, automatic progress refresh, manual recheck, reauthorization and disconnect controls.
 
-First release supports Feishu meetings, GitHub repositories and BigModel Managed Agent. Each repository is managed by one project. Cross-provider project merging, shared-team roles, additional Agent adapters, provider webhooks and PR-merge lifecycle updates are future work.
+First release supports Feishu meetings, GitHub repositories and BigModel Managed Agent. Each repository is managed by one project. Cross-provider project merging, shared-team roles, additional Agent adapters, native meeting-vendor webhooks and PR-merge lifecycle updates are future work.
 
 Feishu custom apps can authorize only users within their published availability. The scan onboarding flow creates an organization-owned app without users copying credentials, subject to company policies. Serving unrelated organizations through one shared application requires Feishu Store approval; self-hosters can also configure their organization app. The UI also supports user-owned OAuth applications. Linear's hosted OAuth app must have public availability to support other workspaces.
 
@@ -63,3 +63,12 @@ npm run validate
 Tests distinguish mocked provider orchestration from live account authorization. They cover two users sharing one database, foreign-resource denial, per-user model credentials, repository claims, OAuth renewal/application binding, queue failure isolation, replay and real patch verification.
 
 Apache-2.0. See [LICENSE](LICENSE). Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Additional Connectors
+
+- Meeting notes Webhook: accepts source TODOs and cited notes from other meeting systems, persists events and processes them through the cloud queue. Owner-scoped credentials, rotation, conflict detection and status API are available. See [docs/MEETING_WEBHOOK.md](docs/MEETING_WEBHOOK.md).
+- GitLab.com Issues: a personal access token connects project discovery, source Issue creation and result comments to an existing GitHub Repo / BigModel binding. Contract and recovery tests pass; real GitLab account acceptance remains pending. See [docs/GITLAB.md](docs/GITLAB.md).
+
+Multi-project routing uses TODO evidence before meeting-level context. Ambiguous, omitted or conflicting TODOs remain paused with a clarification prompt. Meetings cannot silently supply a guessed project or extra feature.
+
+Multi-project validation details: [docs/MULTI_PROJECT_ACCEPTANCE.md](docs/MULTI_PROJECT_ACCEPTANCE.md).

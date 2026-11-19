@@ -76,14 +76,16 @@ showStep(0);
 
 const providers = {
   sources: [
-    ['F', '飞书妙记', '自动发现、逐字稿与来源回溯', '已验证', true],
+    ['F', '飞书妙记', '自动发现新会议待办与纪要依据', '已验证', true],
+    ['↳', '会议纪要 Webhook', '接收其他会议来源，保留证据与去重', '已验证', true],
     ['D', '钉钉听记', '已有适配与离线提取样例', '待完整联调', false],
     ['G', 'Zoom / Google Meet / Teams', '通过来源适配器接入', '规划中', false],
     ['T', '录音与逐字稿', '统一转成可提取的会议片段', '已有实现', false],
   ],
   projects: [
-    ['⑂', 'GitHub Projects', '项目看板与 Issue，衔接代码交付', '待授权验证', false],
-    ['L', 'Linear', '项目、需求与 Agent 协作上下文', '待授权验证', false],
+    ['⑂', 'GitHub Projects', '项目看板与 Issue，衔接代码交付', '已验证', true],
+    ['L', 'Linear', '项目、需求与 Agent 协作上下文', '可连接', false],
+    ['G', 'GitLab Issues', '同步项目，绑定 GitHub Repo 与 Agent', '待真实账号验收', false],
     ['P', 'Plane', '面向开源社区与自托管团队', '规划中', false],
     ['F', '飞书项目', '空间、工作项与团队流程', '规划中', false],
     ['J', 'Jira', '企业研发项目与自定义工作流', '后续候选', false],
@@ -98,7 +100,8 @@ const providers = {
     ['⑂', 'GitHub', '任务分支、独立校验与草稿 PR', '已验证', true],
     ['▤', 'Feishu Docs', '项目目录、Agent Tasks 与结果回填', '已验证', true],
     ['F', '飞书私聊', '授权入口与成果通知', '已验证', true],
-    ['+', 'GitLab / Slack / Teams', '通过仓库与回填适配器扩展', '规划中', false],
+    ['G', 'GitLab Issues', '回填 GitHub PR 与测试结果', '契约测试通过', false],
+    ['+', 'Slack / Teams', '通过成果通知适配器扩展', '规划中', false],
   ],
 };
 const connectorTabs = [...document.querySelectorAll('[data-connector]')];

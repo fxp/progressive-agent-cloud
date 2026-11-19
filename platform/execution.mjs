@@ -176,7 +176,9 @@ export class Execution {
     if(row.payload.retryAfter>this.p.now())return;
     if(row.payload.requiresClarification){await this.s.saveTask(row,'needs_info');return;}
     const p=await this.s.own('projects',row.project_id,row.user_id);const b=p.binding;
-    const meeting=await this.s.connection(row.user_id,'feishu');if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(409,'meeting_connector_not_active');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}
+    const meeting=row.payload.sourceConnectionId?await this.s.own('connections',row.payload.sourceConnectionId,row.user_id):await this.s.connection(row.user_id,'feishu');
+    if(meeting?.provider==='meeting-webhook'&&meeting.status!=='connected')throw new Fault(409,'meeting_connector_not_active');
+    if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(409,'meeting_connector_not_active');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}
     if(!p.active||!b)throw new Fault(409,'project_not_available');
     const source=await this.s.own('connections',p.connection_id,row.user_id);
     const sourceToken=await this.p.access(source);
@@ -195,7 +197,7 @@ export class Execution {
         if(b.executionVersion!=='evidence-repair-v1')throw new Fault(409,'runner_installation_required');
         row.payload.repairRevision=1;
         row.payload.repairFeedback=row.payload.fidelityReview.violations;
-        row.payload.rejectedRuns=[{id:row.payload.githubRunId,review:row.payload.fidelityReview}];
+        row.payload.rejectedRuns=[...(row.payload.rejectedRuns??[]),{id:row.payload.githubRunId,review:row.payload.fidelityReview}];
         row.payload.previousRejectedChecksum=row.payload.patchChecksum;
         delete row.payload.githubRunId;delete row.payload.patchChecksum;delete row.payload.fidelityReview;
         row.payload.error=null;row.status='queued';await this.s.saveTask(row);
@@ -236,6 +238,10 @@ export class Execution {
       const comments=await gh('/issues/'+row.payload.original.id+'/comments?per_page=100');
       const marker='<!-- progressive-agent:'+row.id+':pr -->';
       backfill={comments:comments.filter(c=>c.body?.includes(marker)).map(c=>({id:c.id,body:c.body,url:c.html_url})),complete:comments.length<100};
+    }
+    if(source.provider==='gitlab'&&row.payload.original?.projectId===p.external_id&&/^\d+$/.test(row.payload.original?.id??'')){
+      const comments=await this.p.providers.glPages(await this.p.access(source),'/projects/'+encodeURIComponent(p.external_id)+'/issues/'+row.payload.original.id+'/notes');
+      backfill={comments:comments.filter(c=>c.body?.includes('<!-- progressive-agent:'+row.id+':pr -->')).map(c=>({id:c.id,body:c.body,url:row.payload.original.url+'#note_'+c.id})),complete:true};
     }
     return {run:{id:run.id,status:run.status,conclusion:run.conclusion,attempt:run.run_attempt,url:run.html_url},jobs:jobs.jobs.map(j=>({name:j.name,status:j.status,conclusion:j.conclusion,steps:(j.steps??[]).map(s=>({name:s.name,conclusion:s.conclusion}))})),pull:{number:pr.number,state:pr.state,draft:pr.draft,url:pr.html_url,commit:pr.head?.sha},pullCount:pulls.length,pullsComplete:pulls.length<100,backfill};
   }

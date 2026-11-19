@@ -3,11 +3,13 @@ import {Execution} from './execution.mjs';
 import {scanSource} from './sources.mjs';
 import {coordinate} from './coordinator.mjs';
 import {Fault,hash} from './security.mjs';
+import {drainMeetings} from './meeting-webhook.mjs';
 
 export async function enqueueUser(p,user,{reason='cron'}={}){
   if(!p.env.PA_USER_JOBS)throw new Fault(503,'queue_not_configured');
   const [source,agent]=await Promise.all([p.store.connection(user,'feishu'),p.store.connection(user,'bigmodel')]);
-  if(source?.status!=='connected'||agent?.status!=='connected')return {queued:false};
+  const webhook=await p.store.connection(user,'meeting-webhook');
+  if((source?.status!=='connected'&&webhook?.status!=='connected')||agent?.status!=='connected')return {queued:false};
   const bucket=Math.floor(p.now()/(reason==='cron'?300000:60000));
   const id='job-'+await hash(user+':'+(reason==='cron'?'cron':'manual')+':'+bucket);
   const inserted=await p.store.run("INSERT INTO pa_jobs VALUES(?,?,'queued',?,?,NULL) ON CONFLICT(id) DO NOTHING",id,user,p.now(),p.now());
@@ -45,15 +47,18 @@ export async function consume(batch,env,runnerSource,options={}){
       await p.store.run("UPDATE pa_jobs SET state='running',updated_at=? WHERE id=?",p.now(),job.id);
       const source=await p.store.connection(job.user_id,'feishu');
       const agent=await p.store.connection(job.user_id,'bigmodel');
-      if(source?.status!=='connected'||agent?.status!=='connected'){
+      const webhook=await p.store.connection(job.user_id,'meeting-webhook');
+      if((source?.status!=='connected'&&webhook?.status!=='connected')||agent?.status!=='connected'){
         await p.store.run("UPDATE pa_jobs SET state='completed',updated_at=? WHERE id=?",p.now(),job.id);message.ack();continue;
       }
       let result;
-      if(source.credential){
+      const incoming=await drainMeetings(p,job.user_id);
+      if(source?.status==='connected'&&source.credential){
         const scan=await (options.scan??scanSource)(p,source),tick=await ex.tick(undefined,job.user_id);result={...scan,...tick};
-      }else if(job.user_id===env.PA_LEGACY_USER_ID){
+      }else if(source?.status==='connected'&&job.user_id===env.PA_LEGACY_USER_ID){
         result=await coordinate(env,runnerSource,{platform:p,execution:ex,scheduledTime:p.now()});
-      }else throw new Fault(409,'meeting_authorization_required');
+      }else result=await ex.tick(undefined,job.user_id);
+      result={...result,...incoming};
       await p.store.receipt('run-'+job.id,job.user_id,result,'completed');
       await p.store.run("UPDATE pa_jobs SET state='completed',error=NULL,updated_at=? WHERE id=?",p.now(),job.id);
       message.ack();

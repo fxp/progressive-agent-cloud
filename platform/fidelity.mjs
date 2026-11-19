@@ -51,20 +51,23 @@ export async function extractGrounded(p,user,input){
     '仅从 todos 提取明确开发任务，纪要 notes 只能补全同一项目同一功能的验收与排除条件，不能从纪要另建任务。同一功能的实现、测试、验收、PR、回填、合并均必须合为一个 action，阶段性待办不是独立功能。记会议纪要本身不是代码开发任务。完整保留仅/只/不要、封闭选项集合、数值、默认值、空状态、顺序、不变性等限制；不要遗漏不做事项。不能用惯例或仓库数据推测功能。只输出 JSON {actions:[{todoIds:[原始待办id],project:null或待办/会议标题中的项目名,criteria:[{source:"todo:原始待办id"或纪要id,quote:"该来源中的完整连续原文"}],uncertain:boolean}]}。criteria 必须覆盖全部相关已确认条件，quote逐字引用，不改写不截掉否定词。不同项目或不相关功能的内容不能混入。有歧义、冲突、缺少可验证的功能行为时 uncertain=true。',
     {title:input.title,todos,notes});
   const actions=groundedActions(input,proposal);
-  if(!actions.length)return actions;
+  // Preserve every native TODO. Missing/ambiguous items must be visible for
+  // clarification rather than silently disappearing from a successful receipt.
+  const missing=todos.filter(t=>!actions.some(a=>a.actionTodoIds.includes(t.id))).map(t=>({title:t.content.slice(0,200),goal:t.content,evidence:t.content,project:null,acceptance:[],sourceEvidence:[],actionTodoIds:[t.id],fidelityVersion:1,requiresClarification:true,clarificationReason:'此待办尚未提取到可验证的开发范围和验收条件，请确认是否需要开发、所属项目及预期行为。'}));
+  if(!actions.length)return missing;
   const review=await ask(p,user,'grounding',
     '独立核对并分组全部 actions：必须由其 actionTodoIds 对应的真实待办发起。相同功能的开发/测试/验收/PR/回填/合并阶段必须归到同一组，不得派发多个开发任务；不同项目或独立功能分组。只做会议记录或只做合并、没有代码功能需求的组不能批准。各组 sourceEvidence 的并集必须仅涉及同一项目同一功能，完整覆盖已确认验收、限制、不做事项；不能混入其他功能、未决定方案或新增需求。只有功能明确可验证、无遗漏/矛盾/越界才 approved=true；资料不足则 false，不自行补全。只输出 JSON {groups:[{indices:[0,1],approved:boolean,reason:string}]}，每个 action 的从0开始的索引必须且只能出现在一个组内。',
     {todos,notes,actions});
   const groups=review.groups,indices=Array.isArray(groups)?groups.flatMap(g=>Array.isArray(g.indices)?g.indices:[]):[];
-  if(!Array.isArray(groups)||groups.some(g=>!Array.isArray(g.indices)||!g.indices.length)||indices.length!==actions.length||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||i<0||i>=actions.length))return actions.map(a=>({...a,requiresClarification:true,clarificationReason:'缺少可信的功能分组核对'}));
-  return groups.map(g=>{
+  if(!Array.isArray(groups)||groups.some(g=>!Array.isArray(g.indices)||!g.indices.length)||indices.length!==actions.length||new Set(indices).size!==indices.length||indices.some(i=>!Number.isInteger(i)||i<0||i>=actions.length))return [...actions.map(a=>({...a,requiresClarification:true,clarificationReason:'缺少可信的功能分组核对'})),...missing];
+  return [...groups.map(g=>{
     const members=g.indices.map(i=>actions[i]),ids=[...new Set(members.flatMap(a=>a.actionTodoIds))],selected=todos.filter(t=>ids.includes(t.id));
     const projects=[...new Set(members.map(a=>a.project).filter(Boolean))];
     const approved=g.approved===true&&projects.length<=1&&members.every(a=>!a.requiresClarification);
     const citations=[...new Map(members.flatMap(a=>a.sourceEvidence).map(c=>[c.sourceId+'\n'+c.quote,c])).values()];
     const main=selected.find(t=>/开发|实现|\b(?:implement|build|add)\b/i.test(t.content))??selected[0];
     return {...members[0],title:main.content.slice(0,200),goal:selected.map(t=>t.content).join('\n\n'),evidence:selected.map(t=>t.content).join('\n\n'),project:projects[0]??null,actionTodoIds:ids,acceptance:[...new Set(citations.map(c=>c.quote))],sourceEvidence:citations,requiresClarification:!approved,clarificationReason:approved?null:String(g.reason??'缺少可信的完整验收依据').slice(0,1000)};
-  });
+  }),...missing];
 }
 
 export async function reviewChange(p,user,task,files,baseline=[]){

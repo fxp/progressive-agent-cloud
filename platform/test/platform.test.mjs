@@ -158,3 +158,15 @@ test('Feishu search display markup is decoded before titles are normalized',asyn
  const p=new Providers(async()=>Response.json({code:0,data:{items:[{token:'MeetingToken00001',display_info:'Sprint Desk &lt;b&gt;关键词&lt;/b&gt;：search',meta_data:{app_link:'https://example.feishu.cn/minutes/MeetingToken00001'}}],has_more:false}}));
  const page=await p.meetings('token','owner',{since:0,until:1000});assert.equal(page.items[0].title,'Sprint Desk');assert.equal(page.items[0].externalId,'MeetingToken00001');
 });
+test('explicit retry after correcting configuration reuses task, issue, session and patch, excluding the failed run',async()=>{
+ const f=fixture(),t=await queued(f);t.project.binding.runnerReady=true;await f.p.store.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(t.project.binding),t.project.id);let row=await f.p.store.own('tasks',t.id,owner);await f.p.store.saveTask(row,'failed');f.setRunState({status:'completed',conclusion:'failure'});
+ await f.p.approve(owner,t.id,{restart:true});row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.status,'queued');assert.equal(row.payload.session.id,'session-1');assert.equal(row.payload.patchChecksum,patchChecksum);assert.equal(row.payload.githubRunId,undefined);assert.equal(row.payload.rejectedRuns[0].id,'9');
+ f.setRuns([{id:9,display_title:'PA '+t.id}]);await f.ex.tick();assert.equal(f.counters.issues,1);assert.equal(f.counters.dispatch,2);await assert.rejects(()=>f.ex.claim(t.project,{taskId:t.id,runId:'9'}),{code:'task_claimed_by_another_run'});await f.ex.claim(t.project,{taskId:t.id,runId:'10'});f.env.DB.raw.close();
+});
+test('configuration retry cannot replace an active cloud run',async()=>{
+ const f=fixture(),t=await queued(f),row=await f.p.store.own('tasks',t.id,owner);await f.p.store.saveTask(row,'failed');f.setRunState({status:'in_progress',conclusion:null});await assert.rejects(()=>f.p.approve(owner,t.id,{restart:true}),{code:'run_not_failed'});assert.equal((await f.p.store.own('tasks',t.id,owner)).payload.githubRunId,'9');f.env.DB.raw.close();
+});
+test('explicit acceptance changes invalidate the prior code review before a retry',async()=>{
+ const f=fixture(),t=await queued(f),row=await f.p.store.own('tasks',t.id,owner);row.payload.fidelityVersion=1;row.payload.fidelityReview={approved:true,patchChecksum,filesDigest:'old'};await f.p.store.saveTask(row,'failed');
+ f.setRunState({status:'completed',conclusion:'failure'});await f.p.approve(owner,t.id,{restart:true,acceptance:['Only the newly confirmed behavior']});const after=await f.p.store.own('tasks',t.id,owner);assert.equal(after.payload.fidelityReview,undefined);assert.equal(after.payload.sourceEvidence[0].kind,'user_confirmation');f.env.DB.raw.close();
+});
