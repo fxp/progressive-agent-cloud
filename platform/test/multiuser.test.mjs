@@ -171,3 +171,13 @@ test('recent meetings use only the signed-in users Feishu grant and bounded sear
  const body=await response.json();assert.equal(body.items[0].title,'Private A');assert.equal(JSON.stringify(body).includes('feishu:A'),false);
  assert.equal((await route(new Request(f.env.PA_ORIGIN+'/api/meetings/recent'),f.env,'')).status,401);f.env.DB.raw.close();
 });
+
+
+test('delivery verification uses the task owners repository grant and rejects foreign tasks',async()=>{
+ const f=fixture(),a=await f.setup('A');await f.setup('B');const id='task-audit-0123456789abcdef';
+ await f.p.store.putTask({id,userId:a.user,projectId:a.project.id,meetingKey:'meeting-audit',createdAt:f.p.now(),githubRunId:'7',original:{id:'1'},result:{pr:'https://github.com/owner/repo-A/pull/2'}},'review_ready');
+ const calls=[];f.providers.gh=async(token,path)=>{calls.push({token,path});if(path.includes('/comments?'))return [{id:1,body:'Result <!-- progressive-agent:'+id+':pr -->'}];if(path.includes('/jobs?'))return {jobs:[{name:'verify',status:'completed',conclusion:'success'}]};if(path.includes('/actions/runs/'))return {id:7,status:'completed',conclusion:'success',run_attempt:1};if(path.includes('/pulls?'))return [{number:2}];return {number:2,state:'open',draft:true,head:{sha:'head'}};};
+ const ex=new Execution(f.p,'');await assert.rejects(()=>ex.verification('user-B',id),{code:'not_found'});assert.equal(calls.length,0);
+ const result=await ex.verification(a.user,id);assert.equal(result.jobs[0].conclusion,'success');assert.equal(result.backfill.comments.length,1);assert.equal(result.pullCount,1);assert.equal(result.pull.draft,true);assert.ok(calls.every(c=>c.token==='github:A'&&c.path.startsWith('/repos/owner/repo-A/')));
+ const cookie=await f.cookie('A'),url=f.env.PA_ORIGIN+'/api/tasks/'+id+'/verification';assert.equal((await route(new Request(url,{headers:{cookie}}),f.env,'',{providers:f.providers,fetcher:f.fetcher,now:f.p.now})).status,200);f.env.DB.raw.close();
+});

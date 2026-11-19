@@ -142,6 +142,7 @@ export async function route(request,env,runnerSource,options={}){
       if(env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});
       const {runnerCredential,runnerTokenHash,...safe}=value;return json(safe);
     }
+    if((m=/^\/api\/tasks\/([\w-]+)\/verification$/.exec(path))&&request.method==='GET')return json(await execution.verification(user,m[1]));
     if((m=/^\/api\/tasks\/([\w-]+)\/approve$/.exec(path))&&request.method==='POST'){
       await p.approve(user,m[1],await body(request));return json({queued:true});
     }

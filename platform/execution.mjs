@@ -205,6 +205,27 @@ export class Execution {
     await this.s.saveTask(row,'dispatching');
     await gh('/actions/workflows/progressive-agent.yml/dispatches',{ref:b.baseBranch,inputs:{task_id:row.id}});
   }
+  async verification(user,id){
+    const row=await this.s.own('tasks',id,user),result=row.payload.result;
+    if(!result)throw new Fault(409,'task_result_required');
+    const p=await this.s.own('projects',row.project_id,user),repo=p.binding?.repo;
+    const prefix='https://github.com/'+repo;
+    const number=result.pr?.startsWith(prefix+'/pull/')?/^\d+$/.test(result.pr.slice((prefix+'/pull/').length))?result.pr.slice((prefix+'/pull/').length):null:null;
+    const runId=row.payload.githubRunId;
+    if(!repo||!number||!/^\d+$/.test(String(runId??'')))throw new Fault(409,'task_result_mismatch');
+    const connection=await this.s.own('connections',p.binding.githubConnectionId,user),token=await this.p.access(connection);
+    const gh=path=>this.p.providers.gh(token,'/repos/'+repo+path);
+    const branch='codex/pa-'+row.id.slice(-16);
+    const [run,jobs,pr,pulls]=await Promise.all([gh('/actions/runs/'+runId),gh('/actions/runs/'+runId+'/jobs?filter=latest&per_page=100'),gh('/pulls/'+number),gh('/pulls?state=all&head='+encodeURIComponent(repo.split('/')[0]+':'+branch)+'&per_page=100')]);
+    const source=await this.s.own('connections',p.connection_id,user);
+    let backfill=null;
+    if(source.provider==='github'&&/^\d+$/.test(String(row.payload.original?.id??''))){
+      const comments=await gh('/issues/'+row.payload.original.id+'/comments?per_page=100');
+      const marker='<!-- progressive-agent:'+row.id+':pr -->';
+      backfill={comments:comments.filter(c=>c.body?.includes(marker)).map(c=>({id:c.id,body:c.body,url:c.html_url})),complete:comments.length<100};
+    }
+    return {run:{id:run.id,status:run.status,conclusion:run.conclusion,attempt:run.run_attempt,url:run.html_url},jobs:jobs.jobs.map(j=>({name:j.name,status:j.status,conclusion:j.conclusion,steps:(j.steps??[]).map(s=>({name:s.name,conclusion:s.conclusion}))})),pull:{number:pr.number,state:pr.state,draft:pr.draft,url:pr.html_url,commit:pr.head?.sha},pullCount:pulls.length,pullsComplete:pulls.length<100,backfill};
+  }
   async runnerProject(id,secret){
     const p=await this.s.one('SELECT * FROM pa_projects WHERE id=?',id);
     if(!p?.active||!p.binding?.runnerReady||await hash(secret??'')!==p.binding.runnerTokenHash)throw new Fault(401,'runner_unauthorized');

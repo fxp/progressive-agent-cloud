@@ -55,7 +55,7 @@ function renderProjects(){
 }
 function renderTasks(){
  if(!state.tasks.length){$('#content').innerHTML='<div class="empty"><div class="connector-icon">☷</div><h2>下一场会议，就是任务的起点</h2><p>连接会议来源，并完成项目绑定后，明确的开发待办会自动进入这里。需求不完整或项目不明确时，会等待你的确认。</p><a href="#connectors" class="button secondary">查看 Connectors</a></div>';return;}
- $('#content').innerHTML=`<div class="task-list">${state.tasks.map(row=>{const t=row.payload,p=state.projects.find(p=>p.id===row.project_id);return `<article class="task-card"><div class="project-heading"><h3>${esc(t.title)}</h3>${badge(row.status)}</div><div class="task-meta">${esc(p?.name||'项目待确认')} · ${esc(t.meetingTitle)} · ${esc(row.id.slice(0,18))}</div><p>${esc(t.goal)}</p><details><summary>验收条件与会议依据</summary><ul>${t.acceptance.map(a=>`<li>${esc(a)}</li>`).join('')}</ul><blockquote>${esc(t.evidence)}</blockquote></details>${t.error?`<p class="error-line">${esc(messages[t.error]||t.error)}</p>`:''}<div class="task-links">${t.meetingUrl?`<a target="_blank" rel="noopener noreferrer" href="${link(t.meetingUrl)}">来源会议</a>`:''}${t.original?`<a target="_blank" rel="noopener noreferrer" href="${link(t.original.url)}">原需求</a>`:''}${t.result?`<a target="_blank" rel="noopener noreferrer" href="${link(t.result.pr)}">查看 Pull Request</a><a target="_blank" rel="noopener noreferrer" href="${link(t.result.runUrl)}">测试与运行</a>`:''}${['needs_project','needs_info','awaiting_approval','failed'].includes(row.status)?`<button class="quiet" data-approve="${row.id}">${row.status==='failed'?'检查并重试':'确认任务'}</button>`:''}</div></article>`;}).join('')}</div>`;
+ $('#content').innerHTML=`<div class="task-list">${state.tasks.map(row=>{const t=row.payload,p=state.projects.find(p=>p.id===row.project_id);return `<article class="task-card"><div class="project-heading"><h3>${esc(t.title)}</h3>${badge(row.status)}</div><div class="task-meta">${esc(p?.name||'项目待确认')} · ${esc(t.meetingTitle)} · ${esc(row.id.slice(0,18))}</div><p>${esc(t.goal)}</p><details><summary>验收条件与会议依据</summary><ul>${t.acceptance.map(a=>`<li>${esc(a)}</li>`).join('')}</ul><blockquote>${esc(t.evidence)}</blockquote></details>${t.error?`<p class="error-line">${esc(messages[t.error]||t.error)}</p>`:''}<div class="task-links">${t.meetingUrl?`<a target="_blank" rel="noopener noreferrer" href="${link(t.meetingUrl)}">来源会议</a>`:''}${t.original?`<a target="_blank" rel="noopener noreferrer" href="${link(t.original.url)}">原需求</a>`:''}${t.result?`<a target="_blank" rel="noopener noreferrer" href="${link(t.result.pr)}">查看 Pull Request</a><a target="_blank" rel="noopener noreferrer" href="${link(t.result.runUrl)}">测试与运行</a><button class="quiet" data-verify="${row.id}">核验交付</button>`:''}${['needs_project','needs_info','awaiting_approval','failed'].includes(row.status)?`<button class="quiet" data-approve="${row.id}">${row.status==='failed'?'检查并重试':'确认任务'}</button>`:''}</div></article>`;}).join('')}</div>`;
 }
 function configure(id){
  const c=state.connectors.find(c=>c.id===id);
@@ -86,6 +86,10 @@ function unbind(id){
  showModal('解除项目绑定',`<p class="modal-note">解除 <strong>${esc(p.name)}</strong> 与 ${esc(p.binding.repo)} 的绑定。后续任务将等待重新选择项目；已有 PR 会保留。正在运行的项目须等待本轮完成。</p><form id="unbind-form"><div class="form-footer"><button class="button" type="submit">解除绑定</button></div></form>`);
  $('#unbind-form').addEventListener('submit',async e=>{e.preventDefault();await perform(e.submitter,async()=>{await api('projects/'+id+'/unbind',{});closeModal();await refresh();notice('绑定已解除，可以将 Repo 绑定至另一个项目。');});});
 }
+async function verifyDelivery(id){
+ showModal('核验云端交付','<p class="modal-note">正在读取仓库中的实际运行和回填记录…</p>');
+ try{const result=await api('tasks/'+id+'/verification');$('#modal-body').innerHTML=`<p>云端运行：<strong>${esc(result.run.conclusion||result.run.status)}</strong> · 第 ${esc(result.run.attempt)} 次</p><ul>${result.jobs.map(j=>'<li>'+esc(j.name)+' · '+esc(j.conclusion||j.status)+'</li>').join('')}</ul><p>Pull Request：${result.pull.draft?'草稿 · ':''}${esc(result.pull.state)} · 本任务 ${result.pullCount} 个 PR${result.pullsComplete?'':'（分页未完整）'}</p><p>原需求回填：${result.backfill?result.backfill.comments.length+' 条结果评论'+(result.backfill.complete?'':'（分页未完整）'):'请打开原需求核对'}</p>${result.backfill?.comments.map(c=>'<pre class="modal-note">'+esc(c.body)+'</pre>').join('')||''}`;}catch(error){$('#modal-body').innerHTML='<p class="error-line">'+esc(error.message)+'</p>';}
+}
 function approve(id){
  const row=state.tasks.find(t=>t.id===id);const projects=state.projects.filter(p=>p.active&&p.binding);
  if(!projects.length){notice('请先完成至少一个项目的 Repo 与 Agent 绑定。');return;}
@@ -100,6 +104,7 @@ $('#content').addEventListener('click',async e=>{
  if(b.dataset.bind)return bind(b.dataset.bind);
  if(b.dataset.install)return install(b.dataset.install);
  if(b.dataset.approve)return approve(b.dataset.approve);
+ if(b.dataset.verify)return verifyDelivery(b.dataset.verify);
  if(b.dataset.unbind)return unbind(b.dataset.unbind);
  await perform(b,async()=>{
  if(b.dataset.sync){const result=await api('connectors/'+b.dataset.sync+'/sync',{});notice(state.connectors.find(c=>c.connectionId===b.dataset.sync)?.kind==='meeting'?'会议检查已提交至云端。':'项目同步完成。');}
