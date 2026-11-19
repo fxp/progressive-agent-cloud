@@ -10,7 +10,7 @@ This opt-in workbench flow automates creation of a user-owned custom app. It doe
 4. A connection becomes active only after the returned identity matches the registering user, all required scopes are granted, and a refresh token is present. An existing connection stays in place until then.
 5. Connect an Agent and bind a project/Repo. The cloud scheduler discovers new meetings generated after the new connection's enrollment. Historical meetings are not bootstrapped by this flow.
 
-The four requested user scopes are `minutes:minutes.basic:read`, `minutes:minutes.search:read`, `minutes:minutes.transcript:export`, and `offline_access`. The app-creation template is minimal and does not request `application:application:patch` or configure event delivery. Background discovery uses the existing five-minute Cloudflare Cron/Queue pipeline and user-scoped Minutes search.
+New scan connections default to meeting TODOs. The four requested user scopes are `minutes:minutes.basic:read`, `minutes:minutes.search:read`, `minutes:minutes.artifacts:read`, and `offline_access`. This mode calls the official Minutes AI artifacts endpoint and retains only unfinished `minute_todos`; returned transcript, summary, and chapters are discarded before extraction. The AI-artifact scope itself is broader than TODO-only access. Existing transcript-mode setups keep their explicit mode and can select **改用会议纪要待办** without creating another app. The app-creation template is minimal and does not request `application:application:patch` or configure event delivery. Background discovery uses the existing five-minute Cloudflare Cron/Queue pipeline and user-scoped Minutes search.
 
 ## Cloud state and security
 
@@ -24,16 +24,18 @@ After successful identity and grant validation, the source retains its existing 
 
 ## Real pilot result and limits
 
-The pilot used a company member account without tenant-administrator access. Official app creation succeeded. The device-authorization page granted Minutes metadata and search while explicitly showing **transcript export under review**. The token was only partially scoped, and the platform refused to activate it. The old source grant stayed unchanged.
+A company member without tenant-administrator access successfully created an app through the official scan flow. Transcript export was held for company approval, so its partial grant was correctly rejected. The same member then authorized AI artifacts without administrator approval. The platform verified the registering identity, complete TODO scopes, and a refresh token before activating the new app's connection. This result is specific to the tested organization; company policies may differ.
 
-An earlier configuration probe requested app-management permission to set an OAuth callback. That permission also required review. The final flow removes that requirement entirely and uses device authorization. This does not remove the separate transcript-approval requirement observed in the company. The first pilot application may still have that earlier permission request pending; do not approve that management permission for this flow. Cancel the obsolete request through the application's authorized management process when available.
+A new synthetic meeting was uploaded after this authorization. Native five-minute cloud discovery read its three Feishu-generated TODOs, combined implementation/testing/PR into one feature task, matched its bound project, created the original issue, and dispatched a BigModel cloud session. No transcript export or manual meeting injection was used. The cloud Agent completed the feature, an independent GitHub job passed validation, and publication produced one draft PR with a result comment on the original issue. Eight feature tests passed; browser checks of the downloaded patch confirmed all → pending → completed → all counts of 3 → 2 → 1 → 3. Two later scheduled replay checks are still tracked separately until observed.
 
-No new synthetic meeting was uploaded after this permission blocker, and no successful new meeting-to-PR result or two-round deduplication acceptance is claimed. The synthetic test audio is prepared privately. A full acceptance run must use the new app's own renewable grant and actual new Minutes; an older authorized custom app must not be substituted as proof.
+Feishu-generated TODOs can omit detail present in the meeting. In this pilot they preserved the feature and test categories but omitted exact sample counts and some UI expectations. The product must not invent missing requirements. Keep the source meeting link and TODO IDs for traceability; unclear tasks can require confirmation.
 
-## Acceptance after approval
+An early probe requested application-management permission for a callback. The final device flow does not require it; do not approve that obsolete request. Developer-assistant AppLink IDs are not the registered application's identity; use the identity verified by the token exchange.
 
-- Reauthorize the existing scanned app; verify the four scopes, refresh token, registering identity, and correct company. Reopen after a browser restart to verify recovery.
-- Generate one synthetic meeting with an explicit bound project and a single feature requirement. Let native cloud discovery ingest it without a manual meeting injection.
+## Acceptance
+
+- Verify the complete selected scope set, refresh token, registering identity, and correct company. Reopen after browser restart to verify recovery.
+- Generate one synthetic meeting with an explicit bound project and a single feature requirement. Let native cloud discovery ingest it without manual meeting injection.
 - Verify one task, the matched project, the original issue, one cloud Agent session, independent tests, a draft PR, and an exact result backfill.
 - Observe two subsequent scheduled rounds. Meeting/task/session/PR/result-comment counts must stay stable. Keep this check in the active test session rather than creating a background reminder.
 - Confirm the first user's grants and tasks remain isolated. Validate token refresh in the cloud before claiming sustained unattended use.
@@ -43,3 +45,5 @@ No new synthetic meeting was uploaded after this permission blocker, and no succ
 - [Node SDK app registration](https://github.com/larksuite/node-sdk/blob/main/README.zh.md#一键创建应用)
 - [CLI device authorization](https://github.com/larksuite/cli/blob/main/internal/auth/device_flow.go)
 - [CLI refresh-token prerequisites](https://github.com/larksuite/cli/blob/main/internal/auth/no_refresh_token.go)
+
+- [Minutes AI artifacts API](https://open.feishu.cn/document/minutes-v1/minute/artifacts)

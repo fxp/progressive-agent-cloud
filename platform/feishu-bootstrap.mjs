@@ -4,8 +4,9 @@ import {Fault,hash,seal,open,b64} from './security.mjs';
 // Each bounded HTTP poll survives browser/Worker restarts; no local daemon.
 const registration='https://accounts.feishu.cn/oauth/v1/app/registration';
 export const bootstrapUserScopes=['minutes:minutes.basic:read','minutes:minutes.search:read','minutes:minutes.transcript:export','offline_access'];
+export const todoUserScopes=['minutes:minutes.basic:read','minutes:minutes.search:read','minutes:minutes.artifacts:read','offline_access'];
 const setupContext=id=>'feishu-setup:'+id;
-const safe=(row,payload)=>({id:row.id,state:row.state,error:row.error,expiresAt:row.expires_at,nextPollAt:row.next_poll_at,...(payload?.config?{appId:payload.config.clientId}:{}),...(payload?.approvalScopes?{missingScopes:payload.approvalScopes}:{}),...(payload&&['pending','user_authorizing'].includes(row.state)?{verificationUrl:row.state==='pending'?payload.verificationUrl:payload.deviceAuth?.verificationUrl}:{})});
+const safe=(row,payload)=>({id:row.id,state:row.state,error:row.error,expiresAt:row.expires_at,nextPollAt:row.next_poll_at,...(payload?.config?{appId:payload.config.clientId,readingMode:payload.config.meetingContent??'transcript'}:{}),...(payload?.approvalScopes?{missingScopes:payload.approvalScopes}:{}),...(payload&&['pending','user_authorizing'].includes(row.state)?{verificationUrl:row.state==='pending'?payload.verificationUrl:payload.deviceAuth?.verificationUrl}:{})});
 async function request(p,url,body,method='POST',token){
  const form=body instanceof URLSearchParams;
  const r=await p.fetch(url,{method,headers:{'content-type':form?'application/x-www-form-urlencoded':'application/json',...(token?{authorization:token}:{})},body:form?body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
@@ -32,7 +33,7 @@ export async function startBootstrap(p,user){
   const result=await request(p,registration,new URLSearchParams({action:'begin',archetype:'PersonalAgent',auth_method:'client_secret',request_user_info:'open_id'}));
   if(result.error||typeof result.device_code!=='string'||!result.device_code||typeof result.verification_uri_complete!=='string')throw new Fault(502,'feishu_bootstrap_start_failed');
   const url=new URL(result.verification_uri_complete);if(url.protocol!=='https:'||!['accounts.feishu.cn','open.feishu.cn'].includes(url.hostname)||url.username||url.password)throw new Fault(502,'feishu_bootstrap_url_invalid');
-  const addons={preset:false,scopes:{user:bootstrapUserScopes}};
+  const addons={preset:false,scopes:{user:todoUserScopes}};
   const compressed=await new Response(new Blob([JSON.stringify(addons)]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
   url.searchParams.set('addons',b64(new Uint8Array(compressed)).replaceAll('+','-').replaceAll('/','_').replaceAll('=',''));
   url.searchParams.set('from','sdk');url.searchParams.set('source','node-sdk/progressive-agent');url.searchParams.set('tp','sdk');url.searchParams.set('createOnly','true');
@@ -62,25 +63,27 @@ export async function pollBootstrap(p,user,id){
    if(result.error)return safe(await save(p,row,null,result.error==='expired_token'?'expired':'denied',result.error==='expired_token'?'feishu_bootstrap_expired':'feishu_bootstrap_denied'));
    if(!/^cli_[A-Za-z0-9]+$/.test(result.client_id??'')||typeof result.client_secret!=='string'||!result.client_secret||!result.user_info?.open_id)throw new Fault(502,'feishu_bootstrap_response_invalid');
    // Persist the one-time result BEFORE any configuration API call can fail.
-   payload.config={clientId:result.client_id,clientSecret:result.client_secret,scope:bootstrapUserScopes.join(' '),tokenVersion:'v3',appType:'custom',bootstrap:{setupId:id,openId:result.user_info.open_id}};
+   payload.config={clientId:result.client_id,clientSecret:result.client_secret,scope:todoUserScopes.join(' '),meetingContent:'todos',tokenVersion:'v3',appType:'custom',bootstrap:{setupId:id,openId:result.user_info.open_id}};
    delete payload.deviceCode;delete payload.verificationUrl;
    row=await save(p,row,payload,'configuring');
   }
   return safe(await save(p,row,payload,'ready'));
  }finally{await release();}
 }
-export async function bootstrapOAuth(p,user,id){
+export async function bootstrapOAuth(p,user,id,options={}){
  const release=await p.store.lease('bootstrap:'+id,45000);
  try{
   const row=await own(p,user,id);if(!['ready','completed','blocked','user_authorizing','awaiting_approval'].includes(row.state))throw new Fault(409,'feishu_bootstrap_not_ready');
   const payload=await read(p,row),config=payload.config;
-  if(payload.deviceAuth?.expiresAt>p.now()&&row.state==='user_authorizing')return {...safe(row),verificationUrl:payload.deviceAuth.verificationUrl};
-  const result=await request(p,'https://accounts.feishu.cn/oauth/v1/device_authorization',new URLSearchParams({client_id:config.clientId,scope:bootstrapUserScopes.join(' ')}),'POST','Basic '+btoa(config.clientId+':'+config.clientSecret));
+  const mode=options.mode??config.meetingContent??'transcript';if(!['transcript','todos'].includes(mode))throw new Fault(400,'feishu_reading_mode_invalid');
+  const scopes=mode==='todos'?todoUserScopes:bootstrapUserScopes;
+  if(payload.deviceAuth?.expiresAt>p.now()&&row.state==='user_authorizing'&&mode===(config.meetingContent??'transcript'))return {...safe(row,payload),verificationUrl:payload.deviceAuth.verificationUrl};
+  const result=await request(p,'https://accounts.feishu.cn/oauth/v1/device_authorization',new URLSearchParams({client_id:config.clientId,scope:scopes.join(' ')}),'POST','Basic '+btoa(config.clientId+':'+config.clientSecret));
   if(result.error)throw new Fault(409,'feishu_device_'+String(result.error).replace(/[^a-zA-Z0-9_]/g,'').slice(0,80));
   const url=new URL(result.verification_uri_complete??result.verification_uri);if(url.protocol!=='https:'||!['accounts.feishu.cn','open.feishu.cn'].includes(url.hostname)||!result.device_code)throw new Fault(502,'feishu_bootstrap_response_invalid');
-  payload.config={...config,scope:bootstrapUserScopes.join(' '),tokenVersion:'v3'};
+  payload.config={...config,scope:scopes.join(' '),tokenVersion:'v3',meetingContent:mode};
   payload.deviceAuth={code:result.device_code,verificationUrl:url.href,expiresAt:p.now()+Math.min(Number(result.expires_in)||240,1800)*1000,interval:Math.max(Number(result.interval)||5,5)*1000};delete payload.token;delete payload.approvalScopes;
-  const saved=await save(p,row,payload,'user_authorizing');return {...safe(saved),verificationUrl:url.href};
+  const saved=await save(p,row,payload,'user_authorizing');return {...safe(saved,payload),verificationUrl:url.href};
  }finally{await release();}
 }
 async function advanceDevice(p,row,payload){
@@ -99,7 +102,7 @@ async function advanceDevice(p,row,payload){
  }
  try{
   if(typeof payload.token.scope!=='string')throw new Fault(502,'feishu_bootstrap_scope_unverified');
-  const granted=payload.token.scope.split(/[\s,]+/),missing=bootstrapUserScopes.filter(scope=>!granted.includes(scope));
+  const granted=payload.token.scope.split(/[\s,]+/),missing=config.scope.split(/\s+/).filter(scope=>!granted.includes(scope));
   if(missing.length){payload.approvalScopes=missing;throw new Fault(409,'feishu_minutes_approval_required');}
   await p.acceptFeishu(row.user_id,payload.token,config,{expectedFeishuOpenId:config.bootstrap.openId,replaceConnection:true});
   delete payload.token;delete payload.deviceAuth;return safe(await save(p,row,payload,'completed'));

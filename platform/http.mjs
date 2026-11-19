@@ -109,7 +109,7 @@ export async function route(request,env,runnerSource,options={}){
     let m;
     if(path==='/api/connectors/feishu/bootstrap/start'&&request.method==='POST')return json(await startBootstrap(p,user));
     if((m=/^\/api\/connectors\/feishu\/bootstrap\/([\w-]+)\/(poll|authorize)$/.exec(path))&&request.method==='POST'){
-      const result=await (m[2]==='poll'?pollBootstrap:bootstrapOAuth)(p,user,m[1]);
+      const result=m[2]==='poll'?await pollBootstrap(p,user,m[1]):await bootstrapOAuth(p,user,m[1],await body(request));
       if(result.state==='completed'&&env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});return json(result);
     }
     if(path==='/api/meetings/recent'&&request.method==='GET'){

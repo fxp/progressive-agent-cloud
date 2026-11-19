@@ -125,6 +125,7 @@ export class Platform {
     if(expectedFeishuOpenId&&identity.id!==expectedFeishuOpenId)throw new Fault(409,'feishu_bootstrap_account_mismatch');
     Object.assign(identity,{appId:config.clientId,appType:config.appType??'custom',discovery:config.appType==='store'?'events':'search'});
     if(config.bootstrap)identity.onboarding='scan';
+    if(config.meetingContent==='todos')identity.meetingContent='todos';
     const previous=await this.store.connection(user,'feishu'),id=previous?.id??'feishu-'+await hash(user);
     if(previous&&previous.status!=='disconnected'&&previous.identity.id!==identity.id&&!(replaceConnection&&expectedFeishuOpenId===identity.id))throw new Fault(409,'different_account_disconnect_first');
     token.oauthClient=config;
@@ -278,7 +279,7 @@ export class Platform {
       for(const [index,action]of actions.entries()){
         const project=matchProject({...action,context:input.title},projects);
         const id='task-'+await hash(key+':'+index);
-        const task={...action,id,userId:connection.user_id,projectId:project?.id??null,meetingKey:key,meetingTitle:input.title,meetingUrl:input.url??'',externalCreateId:crypto.randomUUID(),createdAt:this.now()};
+        const task={...action,id,userId:connection.user_id,projectId:project?.id??null,meetingKey:key,meetingTitle:input.title,meetingUrl:input.url??'',...(input.sourceKind==='meeting_todos'?{sourceKind:'meeting_todos',sourceTodoIds:input.sourceTodoIds??[]}:{}),externalCreateId:crypto.randomUUID(),createdAt:this.now()};
         await this.store.putTask(task,!project?'needs_project':!action.acceptance.length?'needs_info':project.binding.automatic?'queued':'awaiting_approval');ids.push(id);
       }
       const result={taskIds:ids,actions};await this.store.receipt(key,connection.user_id,result,'completed');

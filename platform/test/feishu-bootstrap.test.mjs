@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {gunzipSync} from 'node:zlib';
 import {database} from '../../scripts/local-db.mjs';
 import {Platform} from '../service.mjs';
-import {startBootstrap,pollBootstrap,bootstrapOAuth,bootstrapUserScopes} from '../feishu-bootstrap.mjs';
+import {startBootstrap,pollBootstrap,bootstrapOAuth,bootstrapUserScopes,todoUserScopes} from '../feishu-bootstrap.mjs';
 import {seal,open} from '../security.mjs';
 import {route} from '../http.mjs';
 import {sessionCookie} from '../auth.mjs';
 
 async function fixture(){
- let now=1795080000000,pending=true,patchFails=false,identity='ou_new',scope=bootstrapUserScopes.join(' ');const calls=[];
+ let now=1795080000000,pending=true,patchFails=false,identity='ou_new',scope=todoUserScopes.join(' ');const calls=[];
  const env={DB:database(),PA_ORIGIN:'https://example.test',PA_AUTH_MODE:'github',PA_SIGNUP_MODE:'open',PA_ENCRYPTION_KEY:Buffer.alloc(32,2).toString('base64'),PA_SESSION_KEY:Buffer.alloc(32,3).toString('base64')};
  const fetcher=async(url,options)=>{
   const body=options.body instanceof URLSearchParams?Object.fromEntries(options.body):JSON.parse(options.body);calls.push({url,body,method:options.method});
@@ -28,7 +28,7 @@ test('registration is owned, encrypted, reusable and requests only declared conf
  const f=await fixture(),first=await startBootstrap(f.p,'A'),second=await startBootstrap(f.p,'A');
  assert.equal(first.id,second.id);assert.equal(f.calls.length,1);
  const url=new URL(first.verificationUrl),addons=JSON.parse(gunzipSync(Buffer.from(url.searchParams.get('addons'),'base64url')));
- assert.equal(url.searchParams.get('createOnly'),'true');assert.equal(addons.preset,false);assert.equal(addons.scopes.tenant,undefined);assert.deepEqual(addons.scopes.user,bootstrapUserScopes);
+ assert.equal(url.searchParams.get('createOnly'),'true');assert.equal(addons.preset,false);assert.equal(addons.scopes.tenant,undefined);assert.deepEqual(addons.scopes.user,todoUserScopes);
  const raw=(await f.p.store.one('SELECT credential FROM pa_feishu_setups')).credential;assert.equal(raw.includes('private-device-code'),false);assert.equal(JSON.stringify(first).includes('private-device-code'),false);
  await assert.rejects(()=>pollBootstrap(f.p,'B',first.id),{code:'not_found'});f.close();
 });
@@ -40,7 +40,7 @@ test('one-time app credentials are reused for device authorization without manag
  const f=await fixture(),setup=await startBootstrap(f.p,'A');f.advance(5000);f.confirm();
  assert.equal((await pollBootstrap(f.p,'A',setup.id)).state,'ready');
  const first=await bootstrapOAuth(f.p,'A',setup.id),second=await bootstrapOAuth(f.p,'A',setup.id);
- assert.equal(first.verificationUrl,second.verificationUrl);assert.equal(first.state,'user_authorizing');
+ assert.equal(first.verificationUrl,second.verificationUrl);assert.equal(first.state,'user_authorizing');assert.equal(first.readingMode,'todos');
  assert.equal(f.calls.filter(c=>c.body.action==='begin').length,1);assert.equal(f.calls.filter(c=>c.body.action==='poll').length,1);
  assert.equal(f.calls.filter(c=>c.url.endsWith('/device_authorization')).length,1);
  assert.equal(f.calls.some(c=>c.url.includes('/config')||c.url.includes('tenant_access_token')),false);
@@ -90,8 +90,21 @@ test('a short-lived device grant without refresh is not treated as an always-on 
 test('partially approved Minutes scopes remain pending without replacing the current grant',async()=>{
  const f=await fixture(),setup=await startBootstrap(f.p,'A');f.confirm();f.advance(5000);await pollBootstrap(f.p,'A',setup.id);
  await bootstrapOAuth(f.p,'A',setup.id);f.scope('minutes:minutes.basic:read minutes:minutes.search:read offline_access');f.advance(5000);
- const result=await pollBootstrap(f.p,'A',setup.id);assert.equal(result.state,'awaiting_approval');assert.deepEqual(result.missingScopes,['minutes:minutes.transcript:export']);
+ const result=await pollBootstrap(f.p,'A',setup.id);assert.equal(result.state,'awaiting_approval');assert.deepEqual(result.missingScopes,['minutes:minutes.artifacts:read']);
  assert.equal(await f.p.store.connection('A','feishu'),null);const stored=await f.p.store.one('SELECT credential FROM pa_feishu_setups');
  const payload=await open(f.env.PA_ENCRYPTION_KEY,stored.credential,'feishu-setup:'+setup.id);assert.equal(payload.token,undefined);assert.equal(payload.deviceAuth,undefined);
  assert.equal((await startBootstrap(f.p,'A')).state,'awaiting_approval');f.close();
+});
+
+test('todo mode requests AI artifacts without export and activates only its own complete grant',async()=>{
+ const f=await fixture(),setup=await startBootstrap(f.p,'A');f.confirm();f.advance(5000);await pollBootstrap(f.p,'A',setup.id);
+ const authorization=await bootstrapOAuth(f.p,'A',setup.id,{mode:'todos'});assert.equal(authorization.readingMode,'todos');
+ const requested=f.calls.find(c=>c.url.endsWith('/device_authorization')).body.scope;assert.equal(requested.includes('transcript:export'),false);assert.equal(requested.includes('minutes.artifacts:read'),true);
+ f.scope(todoUserScopes.join(' '));f.advance(5000);assert.equal((await pollBootstrap(f.p,'A',setup.id)).state,'completed');
+ assert.equal((await f.p.store.connection('A','feishu')).identity.meetingContent,'todos');assert.equal((await f.p.config('A','feishu')).meetingContent,'todos');f.close();
+});
+test('a previous transcript grant cannot satisfy AI artifacts permission in todo mode',async()=>{
+ const f=await fixture(),setup=await startBootstrap(f.p,'A');f.confirm();f.advance(5000);await pollBootstrap(f.p,'A',setup.id);
+ f.scope(bootstrapUserScopes.join(' '));await bootstrapOAuth(f.p,'A',setup.id,{mode:'todos'});f.advance(5000);const result=await pollBootstrap(f.p,'A',setup.id);
+ assert.equal(result.state,'awaiting_approval');assert.deepEqual(result.missingScopes,['minutes:minutes.artifacts:read']);assert.equal(await f.p.store.connection('A','feishu'),null);f.close();
 });
