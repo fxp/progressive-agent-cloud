@@ -7,6 +7,7 @@ export function database(path=':memory:'){
  db.exec(readFileSync(new URL('../drizzle/0001_multiuser.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('../drizzle/0002_feishu_store.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('../drizzle/0003_feishu_bootstrap.sql',import.meta.url),'utf8'));
+ db.exec(readFileSync(new URL('../drizzle/0004_beta_invites.sql',import.meta.url),'utf8'));
  const wrapper={
   raw:db,
   prepare(sql){

@@ -8,3 +8,4 @@
 .onboarding{border:1px solid #d8d4ed;background:#f5f3ff;padding:25px;margin:0 0 32px}.onboarding h2{font-size:20px;margin:0 0 9px}.onboarding p,.advanced p{color:#676e82;font-size:14px;line-height:1.7}.onboarding ol{list-style:none;padding:0;display:flex;gap:28px;flex-wrap:wrap}.onboarding li{display:flex;align-items:center;gap:9px;font-size:14px;color:#747a8d}.onboarding li span{border:1px solid #c5bfdc;padding:4px 8px}.onboarding li.done{color:#355b43}.advanced{border-top:1px solid #e2e5f0;margin-top:20px;padding-top:16px;font-size:13px;color:#676e82}.advanced summary{cursor:pointer}#account-label{font-size:13px;color:#676e82}@media(max-width:700px){header{flex-wrap:wrap;gap:18px}.onboarding ol{gap:14px}.onboarding{padding:20px}}
 
 [hidden]{display:none!important}
+@media(max-width:700px){nav{overflow-x:auto}nav a{flex:none}}

@@ -5,7 +5,10 @@ import {Execution} from './execution.mjs';
 import {enqueueUser} from './scheduler.mjs';
 import {rotateWebhook,webhookConnection,receiveMeeting,meetingStatus} from './meeting-webhook.mjs';
 import {Fault,hash,random} from './security.mjs';
-import {SESSION_COOKIE,PREAUTH_COOKIE,sessionFrom,preauthFrom,sessionCookie,preauthCookie,clearCookie,isSecureRequest,requireAllowedLogin} from './auth.mjs';
+import {isAdmin,requireAdmission,admitLogin,listInvites,createInvite,revokeInvite,inspectInvite,startInvite} from './invitations.mjs';
+import {health} from './health.mjs';
+import {release} from './release.mjs';
+import {SESSION_COOKIE,PREAUTH_COOKIE,sessionFrom,preauthFrom,sessionCookie,preauthCookie,clearCookie,isSecureRequest} from './auth.mjs';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const redirect=(location,cookies=[])=>{const response=new Response(null,{status:302,headers:{location}});for(const cookie of cookies)response.headers.append('set-cookie',cookie);return response;};
@@ -20,6 +23,14 @@ export async function route(request,env,runnerSource,options={}){
   try{
     const p=new Platform(env,options);const execution=new Execution(p,runnerSource);
     const path=url.pathname;
+    if(path==='/api/health'&&request.method==='GET'){const status=await health(p);return json(status,status.status==='ok'?200:503);}
+    if(['/api/invitations/inspect','/api/invitations/start'].includes(path)&&request.method==='POST'){
+      if(env.PA_AUTH_MODE!=='github')throw new Fault(503,'invitation_unavailable');
+      if(request.headers.get('origin')!==env.PA_ORIGIN)throw new Fault(403,'origin_mismatch');
+      const input=await body(request);
+      if(path.endsWith('/inspect'))return json(await inspectInvite(p,input.token));
+      const started=await startInvite(p,input.token,{secure:isSecureRequest(request,env)}),response=json({url:started.url});response.headers.append('set-cookie',started.cookie);return response;
+    }
     const incoming=/^\/api\/webhooks\/meetings\/([\w-]+)(?:\/(inbound-[a-f0-9]{64}))?$/.exec(path);
     if(incoming){
       if(incoming[2]?request.method!=='GET':request.method!=='POST')throw new Fault(405,'method_not_allowed');
@@ -72,7 +83,6 @@ export async function route(request,env,runnerSource,options={}){
       // GitHub mode never trusts oai-authenticated-user-id headers; identity
       // comes exclusively from the signed session cookie.
       const session=await sessionFrom(request,env);
-      if(session)requireAllowedLogin(env,session.login);
       user=session?.user??null;
       preauth=await preauthFrom(request,env);
       if(path==='/api/logout'&&request.method==='POST'){
@@ -82,6 +92,15 @@ export async function route(request,env,runnerSource,options={}){
         response.headers.append('set-cookie',clearCookie(PREAUTH_COOKIE,{secure}));
         return response;
       }
+      // An invitation may be redeemed while a different session still exists.
+      // Signed preauth/state binds this login before existing-account checks.
+      const finishLogin=async()=>{
+        provider='github';if(!preauth)throw new Fault(401,'preauth_required');
+        const connection=await p.callback(preauth.user,'github',url.searchParams,{useEnvConfig:true,deferSyncFailure:true,finalUser:identity=>admitLogin(p,identity,preauth.inviteHash)});
+        return redirect(`${env.PA_ORIGIN}/app?connected=github${connection.syncError?'&error=project_sync_failed':''}`,[await sessionCookie({user:connection.user_id,login:connection.identity?.name??''},{secret:env.PA_SESSION_KEY,secure}),clearCookie(PREAUTH_COOKIE,{secure})]);
+      };
+      if(path==='/api/oauth/github/callback'&&request.method==='GET'&&preauth)return await finishLogin();
+      if(session)await requireAdmission(p,session.user,session.login);
       if(!user){
         if(path==='/api/state'&&request.method==='GET')return json({error:'sign_in_required',loginUrl:'/api/oauth/github/start'},401);
         if(path==='/api/oauth/github/start'&&request.method==='GET'){
@@ -91,13 +110,7 @@ export async function route(request,env,runnerSource,options={}){
           return redirect(await p.begin(pending,'github'),[await preauthCookie(pending,{secret:env.PA_SESSION_KEY,secure})]);
         }
         if(path==='/api/oauth/github/callback'&&request.method==='GET'){
-          provider='github';
-          if(!preauth)throw new Fault(401,'preauth_required');
-          const connection=await p.callback(preauth.user,'github',url.searchParams,{useEnvConfig:true,deferSyncFailure:true,finalUser:async identity=>{requireAllowedLogin(env,identity.name);const id=`github:${identity.id}`;await p.register(id,identity.name);return id;}});
-          return redirect(`${env.PA_ORIGIN}/app?connected=github${connection.syncError?'&error=project_sync_failed':''}`,[
-            await sessionCookie({user:connection.user_id,login:connection.identity?.name??''},{secret:env.PA_SESSION_KEY,secure}),
-            clearCookie(PREAUTH_COOKIE,{secure}),
-          ]);
+          return await finishLogin();
         }
         throw new Fault(401,'sign_in_required');
       }
@@ -110,7 +123,8 @@ export async function route(request,env,runnerSource,options={}){
     if(request.method==='POST'&&request.headers.get('origin')!==env.PA_ORIGIN)throw new Fault(403,'origin_mismatch');
     if(path==='/api/state'&&request.method==='GET'){
       const state=await p.state(user);
-      state.account=githubAuth?await p.store.one('SELECT id,login FROM pa_users WHERE id=?',user):null;
+      state.release=release;
+      state.account=githubAuth?{...await p.store.one('SELECT id,login FROM pa_users WHERE id=?',user),admin:isAdmin(env,user)}:null;
       state.tasks=state.tasks.map(row=>{const {cliArtifact,...payload}=row.payload;return {...row,payload};});
       state.projects=state.projects.map(project=>{
         if(!project.binding)return project;
@@ -118,6 +132,9 @@ export async function route(request,env,runnerSource,options={}){
       });return json(state);
     }
     let m;
+    if(path==='/api/admin/invites'&&request.method==='GET')return json({invites:await listInvites(p,user)});
+    if(path==='/api/admin/invites'&&request.method==='POST')return json(await createInvite(p,user,await body(request)),201);
+    if((m=/^\/api\/admin\/invites\/([\w-]+)\/revoke$/.exec(path))&&request.method==='POST')return json(await revokeInvite(p,user,m[1]));
     if((m=/^\/api\/connectors\/([\w-]+)\/actions\/([\w-]+)$/.exec(path))&&request.method==='POST'){
       const action=p.registry.get(m[1]).actions?.[m[2]];if(typeof action!=='function')throw new Fault(404,'connector_action_not_found');
       return json(await action({platform:p,user},await body(request)));
@@ -185,7 +202,7 @@ export async function route(request,env,runnerSource,options={}){
   }catch(error){
     if(!(error instanceof Fault))console.error('platform_unexpected',error?.name,String(error?.stack??'').split('\n').slice(1,4).join('\n'));
     const code=error instanceof Fault?error.code:'internal_error';
-    if(provider&&url.pathname.endsWith('/callback'))return Response.redirect(env.PA_ORIGIN+'/app?error='+encodeURIComponent(code),302);
+    if(provider&&url.pathname.endsWith('/callback'))return redirect(env.PA_ORIGIN+'/app?error='+encodeURIComponent(code),provider==='github'?[clearCookie(PREAUTH_COOKIE,{secure:isSecureRequest(request,env)})]:[]);
     return json({error:code},error instanceof Fault?error.status:500);
   }
 }

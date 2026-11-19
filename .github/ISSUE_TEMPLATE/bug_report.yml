@@ -1,0 +1,30 @@
+name: Beta bug report
+description: Report a reproducible failure without private account data.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, OAuth tokens, invitation links, confidential meeting content or private runner artifacts.
+  - type: input
+    id: version
+    attributes:
+      label: Release version
+      placeholder: 0.2.0-beta.1
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: Include minimal reproduction steps and sanitized error codes. Use task/run identifiers only if they are safe to share.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Hosted invited beta
+        - Self-hosted
+    validations:
+      required: true

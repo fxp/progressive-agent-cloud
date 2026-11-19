@@ -7,4 +7,5 @@ if(!result[0]?.results?.length)process.stdout.write(run(['--file','drizzle/0000_
 process.stdout.write(run(['--file','drizzle/0001_multiuser.sql']));
 process.stdout.write(run(['--file','drizzle/0002_feishu_store.sql']));
 process.stdout.write(run(['--file','drizzle/0003_feishu_bootstrap.sql']));
+process.stdout.write(run(['--file','drizzle/0004_beta_invites.sql']));
 console.log('Database migrations applied. Existing data preserved.');
