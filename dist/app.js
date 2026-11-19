@@ -92,12 +92,17 @@ const providers = {
   ],
   agents: [
     ['B', 'BigModel Managed Agent', '云端编码、测试与成果收集', '已验证', true],
-    ['C', 'Claude Code', '已有本机执行器与项目上下文', '已有适配', false],
-    ['O', 'Codex', '计划接入的编码执行器', '规划中', false],
-    ['+', 'CLI / HTTP Agent', '实现执行、事件与成果契约', '接口规划', false],
+    ['C', 'Claude Code', '隔离云端 CLI，支持兼容模型网关', '已验证', true],
+    ['O', 'Codex CLI', '隔离云端 CLI，独立测试后创建 PR', '已验证', true],
+    ['+', '自定义 Agent 插件', '实现版本化 Agent 与执行契约', '可扩展', false],
+  ],
+  repositories: [
+    ['⑂', 'GitHub', '安装执行器、独立测试、创建草稿 PR', '已验证', true],
+    ['+', '其他代码仓库', '通过仓库插件实现派发、验证与发布', '可扩展', false],
   ],
   delivery: [
-    ['⑂', 'GitHub', '任务分支、独立校验与草稿 PR', '已验证', true],
+    ['⑂', 'GitHub Issues', '原需求关联 PR、测试和运行记录', '已验证', true],
+    ['L', 'Linear', '将开发结果回填来源需求', '可连接', false],
     ['▤', 'Feishu Docs', '项目目录、Agent Tasks 与结果回填', '已验证', true],
     ['F', '飞书私聊', '授权入口与成果通知', '已验证', true],
     ['G', 'GitLab Issues', '回填 GitHub PR 与测试结果', '契约测试通过', false],

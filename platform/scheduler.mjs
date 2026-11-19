@@ -1,15 +1,12 @@
 import {Platform} from './service.mjs';
 import {Execution} from './execution.mjs';
-import {scanSource} from './sources.mjs';
 import {coordinate} from './coordinator.mjs';
 import {Fault,hash} from './security.mjs';
-import {drainMeetings} from './meeting-webhook.mjs';
 
 export async function enqueueUser(p,user,{reason='cron'}={}){
   if(!p.env.PA_USER_JOBS)throw new Fault(503,'queue_not_configured');
-  const [source,agent]=await Promise.all([p.store.connection(user,'feishu'),p.store.connection(user,'bigmodel')]);
-  const webhook=await p.store.connection(user,'meeting-webhook');
-  if((source?.status!=='connected'&&webhook?.status!=='connected')||agent?.status!=='connected')return {queued:false};
+  const connections=await p.store.all("SELECT * FROM pa_connections WHERE user_id=? AND status='connected'",user);
+  if(!connections.some(c=>p.registry.has(c.provider,'meeting'))||!connections.some(c=>p.registry.has(c.provider,'agent')))return {queued:false};
   const bucket=Math.floor(p.now()/(reason==='cron'?300000:60000));
   const id='job-'+await hash(user+':'+(reason==='cron'?'cron':'manual')+':'+bucket);
   const inserted=await p.store.run("INSERT INTO pa_jobs VALUES(?,?,'queued',?,?,NULL) ON CONFLICT(id) DO NOTHING",id,user,p.now(),p.now());
@@ -25,7 +22,8 @@ export async function schedule(env,runnerSource,options={}){
   // never OAuth tokens, model keys, transcripts or another user's projects.
   let after='',queued=0;
   for(let page=0;page<100;page++){
-    const users=await p.store.all("SELECT DISTINCT c.user_id FROM pa_connections c JOIN pa_users u ON u.id=c.user_id WHERE c.provider='bigmodel' AND c.status='connected' AND u.disabled_at IS NULL AND c.user_id>? ORDER BY c.user_id LIMIT 100",after);
+    const agents=p.registry.list('agent').map(m=>m.id);if(!agents.length)return {queued};
+    const users=await p.store.all("SELECT DISTINCT c.user_id FROM pa_connections c JOIN pa_users u ON u.id=c.user_id WHERE c.provider IN ("+agents.map(()=>'?').join(',')+") AND c.status='connected' AND u.disabled_at IS NULL AND c.user_id>? ORDER BY c.user_id LIMIT 100",...agents,after);
     for(const row of users){const result=await enqueueUser(p,row.user_id);if(result.queued)queued++;}
     if(users.length<100)break;after=users.at(-1).user_id;
   }
@@ -45,20 +43,17 @@ export async function consume(batch,env,runnerSource,options={}){
     if(!release){message.retry({delaySeconds:30});continue;}
     try{
       await p.store.run("UPDATE pa_jobs SET state='running',updated_at=? WHERE id=?",p.now(),job.id);
-      const source=await p.store.connection(job.user_id,'feishu');
-      const agent=await p.store.connection(job.user_id,'bigmodel');
-      const webhook=await p.store.connection(job.user_id,'meeting-webhook');
-      if((source?.status!=='connected'&&webhook?.status!=='connected')||agent?.status!=='connected'){
+      const connections=await p.store.all("SELECT * FROM pa_connections WHERE user_id=? AND status='connected'",job.user_id);
+      const sources=connections.filter(c=>p.registry.has(c.provider,'meeting'));
+      if(!sources.length||!connections.some(c=>p.registry.has(c.provider,'agent'))){
         await p.store.run("UPDATE pa_jobs SET state='completed',updated_at=? WHERE id=?",p.now(),job.id);message.ack();continue;
       }
-      let result;
-      const incoming=await drainMeetings(p,job.user_id);
-      if(source?.status==='connected'&&source.credential){
-        const scan=await (options.scan??scanSource)(p,source),tick=await ex.tick(undefined,job.user_id);result={...scan,...tick};
-      }else if(source?.status==='connected'&&job.user_id===env.PA_LEGACY_USER_ID){
-        result=await coordinate(env,runnerSource,{platform:p,execution:ex,scheduledTime:p.now()});
-      }else result=await ex.tick(undefined,job.user_id);
-      result={...result,...incoming};
+      let result={};
+      for(const source of sources){
+        const summary=await p.registry.get(source.provider,'meeting').discover({platform:p,scan:options.scan,legacy:()=>coordinate(env,runnerSource,{platform:p,execution:ex,scheduledTime:p.now()})},source);
+        for(const [key,value]of Object.entries(summary??{}))result[key]=typeof value==='number'?(result[key]??0)+value:value;
+      }
+      const tick=await ex.tick(undefined,job.user_id);result={...result,...tick};
       await p.store.receipt('run-'+job.id,job.user_id,result,'completed');
       await p.store.run("UPDATE pa_jobs SET state='completed',error=NULL,updated_at=? WHERE id=?",p.now(),job.id);
       message.ack();

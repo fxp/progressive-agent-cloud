@@ -1,3 +1,4 @@
+import {registry as builtinRegistry} from './connectors/builtins.mjs';
 import {storeConfig,assertTenant,subscribeMinutes} from './feishu-store.mjs';
 import {catalog, oauthProviders} from './catalog.mjs';
 import {Providers} from './providers.mjs';
@@ -7,8 +8,8 @@ import {meetingIdentity} from './meeting-identity.mjs';
 import {Fault, random, hash, challenge, seal, open, requireValue, validateBinding, matchProject} from './security.mjs';
 
 export class Platform {
-  constructor(env, {fetcher=fetch, now=Date.now, providers}={}) {
-    this.env=env; this.fetch=fetcher.bind(globalThis); this.now=now; this.store=new Store(env.DB,now); this.providers=providers ?? new Providers(fetcher);
+  constructor(env, {fetcher=fetch, now=Date.now, providers, registry=builtinRegistry}={}) {
+    this.registry=registry; this.env=env; this.fetch=fetcher.bind(globalThis); this.now=now; this.store=new Store(env.DB,now); this.providers=providers ?? new Providers(fetcher);
   }
   legacyUser(user){return this.env.PA_AUTH_MODE!=='github'||this.env.PA_LEGACY_USER_ID===user;}
   async register(user,login){
@@ -30,6 +31,20 @@ export class Platform {
     if(!probe.ok)throw new Fault(probe.status===401||probe.status===403?401:502,'agent_key_rejected');
     const id='bigmodel-'+await hash(user);
     await this.store.connect({id,user,provider:'bigmodel',kind:'agent',identity:{id:'bigmodel',name:'个人 Managed Agent'},credential:await seal(this.env.PA_ENCRYPTION_KEY,{apiKey},id)});
+  }
+  async reasoner(user){
+    const connections=await this.store.all("SELECT * FROM pa_connections WHERE user_id=? AND status='connected'",user);
+    const ready=connections.filter(c=>this.registry.has(c.provider,'agent'));
+    const connection=ready.find(c=>c.provider==='bigmodel')??ready[0];if(!connection)throw new Fault(409,'agent_not_connected');return connection;
+  }
+  async completeJSON(user,request){const c=await this.reasoner(user);return this.registry.get(c.provider,'agent').completeJSON({platform:this},c,request);}
+  async executionCredential(user,provider){
+    const connection=await this.store.connection(user,provider);
+    return this.registry.get(provider,'agent').credential({platform:this},connection);
+  }
+  async saveCodingAgent(user,provider,input){
+    const adapter=this.registry.get(provider,'agent'),credential=await adapter.validate({platform:this},input),id=provider+'-'+await hash(user);
+    await this.store.connect({id,user,provider,kind:'agent',identity:{id:provider,name:this.registry.get(provider).manifest.name,model:credential.model,baseUrl:credential.baseUrl,protocol:credential.protocol},credential:await seal(this.env.PA_ENCRYPTION_KEY,credential,id)});
   }
   async saveGitlab(user,input){
     const token=String(input.token??'').trim();
@@ -62,14 +77,14 @@ export class Platform {
   async state(user) {
     const connections=await this.store.all('SELECT * FROM pa_connections WHERE user_id=?',user);
     const connectors=[];
-    for(const item of catalog){
+    for(const item of this.registry.list()){
       const connection=connections.find(c=>c.provider===item.id);
       const config=item.auth==='oauth' ? await this.config(user,item.id) : null;
       const setupStatus=item.id==='feishu'?await this.store.one('SELECT state,error FROM pa_feishu_setups WHERE user_id=?',user):null;
       connectors.push({...item,setupStatus,discovery:connection?.identity?.discovery??(item.id==='feishu'&&config?.appType==='store'?'events':null),storeAvailable:item.id==='feishu'&&this.env.PA_FEISHU_STORE_ENABLED==='true',connectionId:connection?.id,status:connection?.status??'disconnected',identity:connection?.identity,lastSync:connection?.synced_at,error:connection?.error,configured:item.auth==='oauth'?!!(config.clientId&&config.clientSecret):!!connection?.credential||(this.legacyUser(user)&&!!this.env.PA_BIGMODEL_KEY),clientId:config?.clientId??'',callback:`${this.env.PA_ORIGIN}/api/oauth/${item.id}/callback`,setup:oauthProviders[item.id]?.setup});
     }
     const latest=await this.store.one("SELECT state,payload,updated_at FROM pa_receipts WHERE user_id=? AND id LIKE 'run-%' ORDER BY updated_at DESC LIMIT 1",user);
-    return {connectors,projects:await this.store.all('SELECT * FROM pa_projects WHERE user_id=? ORDER BY name',user),tasks:await this.store.all('SELECT * FROM pa_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 100',user),scheduler:!!this.env.PA_USER_JOBS||!!this.env.PA_BRIDGE_ENABLED,schedulerLast:latest?{status:latest.state,at:latest.updated_at,error:latest.payload.error??null}:null};
+    return {connectors,projects:await this.store.all('SELECT * FROM pa_projects WHERE user_id=? ORDER BY name',user),tasks:await this.store.all("SELECT id,user_id,project_id,meeting_key,status,json_remove(payload,'$.cliArtifact') AS payload,updated_at FROM pa_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 100",user),scheduler:!!this.env.PA_USER_JOBS||!!this.env.PA_BRIDGE_ENABLED,schedulerLast:latest?{status:latest.state,at:latest.updated_at,error:latest.payload.error??null}:null};
   }
   async begin(user,provider,options={}) {
     const config=options.config??(provider==='feishu'&&options.store?storeConfig(this.env):await this.config(user,provider)); const info=oauthProviders[provider];
@@ -180,10 +195,10 @@ export class Platform {
   }
   async sync(user,id) {
     const connection=await this.store.own('connections',id,user);
-    if(!['github','linear','gitlab'].includes(connection.provider))throw new Fault(400,'not_a_project_connector');
+    if(!this.registry.has(connection.provider,'project'))throw new Fault(400,'not_a_project_connector');
     const release=await this.store.lease('sync:'+id,180000);
     try{
-      const projects=await this.providers.projects(connection.provider,await this.access(connection));
+      const projects=await this.registry.get(connection.provider,'project').list({platform:this},await this.access(connection));
       const stamp=this.now();
       // Collect every page before changing availability. Failed reads keep the old catalog.
       const statements=[this.store.query('UPDATE pa_projects SET active=0 WHERE connection_id=?',id)];
@@ -216,28 +231,30 @@ export class Platform {
     ]);
   }
   async bind(user,id,input){
-    const p=await this.store.own('projects',id,user);const binding=validateBinding(input);
+    const p=await this.store.own('projects',id,user);const binding=validateBinding(input,{agents:this.registry.list('agent').map(m=>m.id),repositories:this.registry.list('repository').map(m=>m.id),deliveries:this.registry.list('delivery').map(m=>m.id)});
     const active=await this.store.one("SELECT id FROM pa_tasks WHERE project_id=? AND status IN ('dispatching','running','backfilling') LIMIT 1",id);
     if(active)throw new Fault(409,'project_has_active_run');
     if(!p.active)throw new Fault(400,'project_archived');
     const gh=await this.store.own('connections',binding.githubConnectionId,user);
-    if(gh.provider!=='github')throw new Fault(400,'github_connection_required');
-    const agent=await this.store.connection(user,'bigmodel');
+    if(gh.provider!==binding.repository)throw new Fault(400,'repository_connection_required');
+    const agent=await this.store.connection(user,binding.agent);
     if(agent?.status!=='connected')throw new Fault(409,'agent_not_connected');
-    const repo=await this.providers.repository(await this.access(gh),binding.repo);
+    const repo=await this.registry.get(binding.repository,'repository').repository({platform:this},await this.access(gh),binding.repo);
     const conflicts=await this.store.all('SELECT * FROM pa_projects WHERE user_id=? AND active=1 AND id<>?',user,id);
     if(conflicts.some(other=>other.binding?.repo?.toLowerCase()===repo.name.toLowerCase()))throw new Fault(409,'repository_already_bound');
     const source=await this.store.own('connections',p.connection_id,user);
-    if(source.provider==='linear'){
+    binding.delivery??=source.provider;
+    if(binding.delivery!==source.provider)throw new Fault(400,'delivery_source_mismatch');
+    if(p.metadata.teams?.length){
       const teams=p.metadata.teams??[];
       if(!binding.teamId && teams.length===1)binding.teamId=teams[0].id;
       if(!teams.some(t=>t.id===binding.teamId))throw new Fault(400,'linear_team_required');
     }
     const old=p.binding;
     if(old && old.repo===repo.name && old.githubConnectionId===binding.githubConnectionId){
-      for(const key of ['workflowSha','runnerSha','runnerTokenHash','runnerCredential'])if(old[key])binding[key]=old[key];
+      for(const key of ['workflowSha','runnerSha','runnerTokenHash','runnerCredential','executionVersion'])if(old[key])binding[key]=old[key];
     }
-    if(old && (old.repo!==repo.name || JSON.stringify(old.validation)!==JSON.stringify(binding.validation) || JSON.stringify(old.allowedPaths)!==JSON.stringify(binding.allowedPaths)))binding.runnerReady=false;
+    if(old && (old.repo!==repo.name || JSON.stringify(old.validation)!==JSON.stringify(binding.validation) || JSON.stringify(old.allowedPaths)!==JSON.stringify(binding.allowedPaths) || old.agent!==binding.agent || (old.repository??'github')!==binding.repository))binding.runnerReady=false;
     else binding.runnerReady=old?.runnerReady??false;
     binding.baseBranch=repo.defaultBranch;
     const claimed=await this.env.DB.batch([
@@ -338,17 +355,22 @@ export class Platform {
     if(input.restart===true){
       if(row.status!=='failed'||!row.payload.githubRunId||row.payload.result)throw new Fault(409,'restart_requires_failed_run');
       if(!p.binding.runnerReady)throw new Fault(409,'runner_installation_required');
-      const gh=await this.store.own('connections',p.binding.githubConnectionId,user);
-      const run=await this.providers.gh(await this.access(gh),`/repos/${p.binding.repo}/actions/runs/${row.payload.githubRunId}`);
+      const repository=this.registry.get(p.binding.repository??'github','repository');
+      const run=await repository.run({platform:this},p,row.payload.githubRunId);
       if(run.status!=='completed'||run.conclusion==='success')throw new Fault(409,'run_not_failed');
       row.payload.rejectedRuns=[...(row.payload.rejectedRuns??[]),{id:row.payload.githubRunId,reason:'explicit_configuration_retry'}];
+      if(row.payload.cliIntent&&row.payload.cliArtifact?.revision!==row.payload.cliIntent.revision){
+        row.payload.cliIntentHistory=[...(row.payload.cliIntentHistory??[]),{...row.payload.cliIntent,resolvedAt:this.now(),resolution:'explicit_failed_run_restart'}];
+        delete row.payload.cliIntent;
+      }
       delete row.payload.githubRunId;delete row.payload.runUrl;delete row.payload.retryAfter;
       row.payload.error=null;await this.store.saveTask(row,'queued');return;
     }
     if(row.status==='failed'&&row.payload.githubRunId&&!row.payload.result){
-      const gh=await this.store.own('connections',p.binding.githubConnectionId,user);
+      if(row.payload.cliIntent&&row.payload.cliArtifact?.revision!==row.payload.cliIntent.revision)throw new Fault(409,'cli_intent_requires_explicit_restart');
+      const repository=this.registry.get(p.binding.repository??'github','repository');
       row.payload.retryAfter=this.now()+60000;row.payload.error=null;await this.store.saveTask(row,'running');
-      try{await this.providers.gh(await this.access(gh),`/repos/${p.binding.repo}/actions/runs/${row.payload.githubRunId}/rerun-failed-jobs`,{});}catch(error){row.payload.error=error.code??'retry_failed';await this.store.saveTask(row,'failed');throw error;}
+      try{await repository.rerun({platform:this},p,row.payload.githubRunId);}catch(error){row.payload.error=error.code??'retry_failed';await this.store.saveTask(row,'failed');throw error;}
       return;
     }
     row.payload.error=null;await this.store.saveTask(row,row.payload.result?'backfilling':'queued');

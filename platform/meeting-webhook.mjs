@@ -42,7 +42,8 @@ export async function drainMeetings(p,user){
   if(row.payload.connectionId!==connection.id)continue;
   if(row.payload.receivedAt<connection.identity.enrolledAt){await p.store.receipt(row.id,user,row.payload,'cancelled');continue;}
   // ingest's durable meeting receipt recovers safely after interruption here.
-  const result=await p.ingest(connection,row.payload.meeting);
+  const meeting=await p.registry.get(connection.provider,'meeting').read({platform:p},connection,row.payload);
+  const result=await p.ingest(connection,meeting);
   await p.store.receipt(row.id,user,{...row.payload,taskIds:result.taskIds},'completed');count++;
  }
  return {webhookMeetings:count};

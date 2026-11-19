@@ -8,7 +8,7 @@ Native Feishu discovery initially checks the most recent readable meeting from t
 
 Project matching uses a unique project name or alias. Ambiguous projects and incomplete requirements wait for confirmation. Binding a project can resolve that user's pending unassigned tasks. A repository claim is global across workspaces so another authorized collaborator cannot overwrite its runner credentials through this service.
 
-Execution creates or locates an original issue before dispatch. The repository workflow clones a Git bundle in a credential-free Managed Agent sandbox. A separate GitHub job applies and tests the patch. Publication verifies the task/run relationship, installed workflow and runner hashes, base commit and patch checksum before creating a draft PR and commenting on the original issue.
+Execution creates or locates an original issue before dispatch. The repository adapter selects either a credential-free Managed Agent sandbox or a network-isolated Codex / Claude Code container on a GitHub-hosted runner. A separate GitHub job applies and tests the patch. Publication verifies the task/run relationship, installed workflow and runner hashes, base commit and patch checksum before creating a draft PR and commenting on the original issue.
 
 The session cookie is signed, HttpOnly, Secure on HTTPS, SameSite=Lax and expiring. OAuth state is single-use, expiring and browser/user bound. Its encrypted envelope captures the application configuration used at authorization, so later settings changes cannot switch a code or refresh token to a different application. Credentials use AES-GCM with owner/connection context. Secrets are never returned to the browser or placed in queue messages.
 
@@ -19,3 +19,7 @@ The optional legacy exporter compatibility is restricted to an explicitly config
 The meeting notes Webhook authenticates with an owner-scoped, rotatable Bearer credential. The receiver stores a bounded source-evidence envelope in D1 before enqueuing processing; the queue contains only IDs. Webhook-only accounts do not require a Feishu grant. The status API returns only that endpoint's event and task links. Receipt digests reject altered same-ID payloads. An account-scoped canonical meeting URL and lease prevent cross-Connector duplicate extraction, including completed pre-upgrade tasks and interrupted original ingestion.
 
 GitLab.com Issues uses an encrypted per-user Personal Access Token verified for `api` scope. It imports project catalogs and handles source Issue/result comments independently of the GitHub repository credential. The repository and PR execution path remains GitHub Actions plus BigModel. Real GitLab account acceptance is still pending; see [GITLAB.md](GITLAB.md).
+
+## Plugin composition
+
+Five versioned role contracts replace provider selection in source discovery, project import, Agent reasoning/execution, repository publication and original-requirement delivery. A plugin can provide multiple roles. Registered manifests drive the workbench catalog; owner-scoped actions provide configuration extensions. See [CONNECTOR_PLUGINS.md](CONNECTOR_PLUGINS.md) for contracts, normalized records and CLI recovery semantics.

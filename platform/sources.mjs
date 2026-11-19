@@ -4,7 +4,7 @@ import {Fault,hash} from './security.mjs';
 // The cutoff never advances past late-indexed meetings. Search windows and
 // page offsets survive retries; receipts scope every meeting to its owner.
 export async function scanSource(p,connection){
-  const user=connection.user_id;await p.agentKey(user);
+  const user=connection.user_id;await p.reasoner(user);
   const current=await p.store.own('connections',connection.id,user);
   if(current.status!=='connected'||!current.credential)throw new Fault(409,'meeting_connector_not_active');
   if(current.identity.discovery==='events')return scanInbox(p,current);
@@ -23,7 +23,7 @@ export async function scanSource(p,connection){
       continue;
     }
     let evidence;
-    try{evidence=current.identity.meetingContent==='todos'?await p.providers.todoEvidence(token,item.externalId):{transcript:await p.providers.transcript(token,item.externalId)};}catch(error){
+    try{evidence=await p.registry.get(current.provider,'meeting').read({platform:p},current,item);}catch(error){
       if(['transcript_not_ready','meeting_todos_not_ready'].includes(error.code)||/^feishu_api_209100[2-5]$/.test(error.code??'')){if(++reads>=5)break;continue;}
       throw error;
     }

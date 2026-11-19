@@ -8,7 +8,7 @@ const port=Number(process.env.PORT||4176),origin='http://127.0.0.1:'+port;
 mkdirSync('.local',{recursive:true});
 let key;try{key=readFileSync('.local/preview-key','utf8');}catch{key=randomBytes(32).toString('base64');writeFileSync('.local/preview-key',key,{mode:0o600});}
 const env={DB:database('.local/preview.sqlite'),PA_ORIGIN:origin,PA_ENCRYPTION_KEY:key,...Object.fromEntries(Object.entries(process.env).filter(([k])=>k.startsWith('PA_')))};
-const runner=readFileSync('platform/runner.mjs','utf8');
+const {runnerSource:runner}=await import('../worker/assets.generated.mjs');
 createServer(async(req,res)=>{
  try{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);

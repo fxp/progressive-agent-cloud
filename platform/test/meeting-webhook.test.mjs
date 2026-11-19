@@ -72,7 +72,7 @@ test('the same meeting delivered by another Connector or event ID reuses complet
 test('cross-Connector dedup adopts a pre-upgrade meeting, is owner scoped and normalizes Feishu link parameters',async()=>{
  const f=await fixture(),url='https://bcngoc1xoyfr.feishu.cn/minutes/obcnb4spkg834x9cn52p7zh7';await f.p.ingest(f.connection,{...webhookMeeting(meeting),url});await f.p.store.run("DELETE FROM pa_receipts WHERE id LIKE 'meeting-url-%'");
  const count=f.calls(),result=await f.p.ingest({id:'feishu-A',user_id:'A'},{...webhookMeeting(meeting),externalId:'native',url:url+'?from=list_page'});assert.equal(result.taskIds.length,5);assert.equal(f.calls(),count);assert.equal(result.reused,true);
- await f.p.ingest({id:'feishu-B',user_id:'B'},{...webhookMeeting(meeting),url});assert.ok(f.calls()>count);assert.equal((await f.p.store.all('SELECT * FROM pa_tasks')).length,10);f.env.DB.raw.close();
+ await f.p.store.connect({id:'agent-B',user:'B',provider:'bigmodel',kind:'agent',identity:{}});await f.p.ingest({id:'feishu-B',user_id:'B'},{...webhookMeeting(meeting),url});assert.ok(f.calls()>count);assert.equal((await f.p.store.all('SELECT * FROM pa_tasks')).length,10);f.env.DB.raw.close();
 });
 test('a second Connector waits for an interrupted original ingestion instead of duplicating partial tasks',async()=>{
  const f=await fixture();await f.p.ingest(f.connection,webhookMeeting(meeting));await f.p.store.run("DELETE FROM pa_receipts WHERE id LIKE 'meeting-url-%'");const original=(await f.p.store.all('SELECT * FROM pa_tasks'))[0].meeting_key;await f.p.store.run("UPDATE pa_receipts SET state='processing' WHERE id=?",original);

@@ -22,12 +22,14 @@ export async function open(secret, value, context) {
   const data = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(envelope.iv), additionalData:encode.encode(context)}, await key(secret), unb64(envelope.data));
   return JSON.parse(new TextDecoder().decode(data));
 }
-export function validateBinding(input) {
+export function validateBinding(input,{agents=['bigmodel'],repositories=['github'],deliveries}={}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.repo ?? '')) throw new Fault(400, 'invalid_repository');
-  if (input.agent !== 'bigmodel') throw new Fault(400, 'unsupported_agent');
+  if (!agents.includes(input.agent)) throw new Fault(400, 'unsupported_agent');
   if (!Array.isArray(input.validation) || !input.validation.length || input.validation.length > 5 || input.validation.some(c => typeof c !== 'string' || !c.trim() || c.length > 300 || /[\r\n]/.test(c))) throw new Fault(400, 'validation_required');
   if (!Array.isArray(input.allowedPaths) || !input.allowedPaths.length || input.allowedPaths.some(p => typeof p !== 'string' || !/^[\w./-]+$/.test(p) || p.startsWith('/') || p.split('/').includes('..') || p.startsWith('.git') || p.startsWith('.env'))) throw new Fault(400, 'invalid_allowed_paths');
-  return {repo:input.repo, githubConnectionId:String(input.githubConnectionId ?? ''), agent:'bigmodel', validation:input.validation.map(c=>c.trim()), allowedPaths:input.allowedPaths, aliases:(Array.isArray(input.aliases)?input.aliases:[]).filter(a=>typeof a==='string' && a.trim().length>2).slice(0,20), automatic:input.automatic === true, teamId:input.teamId || null, sourceEnabled:true};
+  const repository=input.repository??'github';if(!repositories.includes(repository))throw new Fault(400,'unsupported_repository');
+  if(input.delivery&&deliveries&&!deliveries.includes(input.delivery))throw new Fault(400,'unsupported_delivery');
+  return {repository,...(input.delivery?{delivery:input.delivery}:{}),repo:input.repo, repositoryConnectionId:String(input.repositoryConnectionId??input.githubConnectionId??''),githubConnectionId:String(input.repositoryConnectionId??input.githubConnectionId??''), agent:input.agent, validation:input.validation.map(c=>c.trim()), allowedPaths:input.allowedPaths, aliases:(Array.isArray(input.aliases)?input.aliases:[]).filter(a=>typeof a==='string' && a.trim().length>2).slice(0,20), automatic:input.automatic === true, teamId:input.teamId || null, sourceEnabled:true};
 }
 export function matchProject(action, projects) {
   const explicit = projects.filter(p => action.projectId && action.projectId === p.id);
