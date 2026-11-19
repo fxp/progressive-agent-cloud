@@ -1,4 +1,5 @@
 import {receiveFeishu} from './feishu-store.mjs';
+import {startBootstrap,pollBootstrap,bootstrapOAuth} from './feishu-bootstrap.mjs';
 import {Platform} from './service.mjs';
 import {Execution} from './execution.mjs';
 import {enqueueUser} from './scheduler.mjs';
@@ -106,6 +107,11 @@ export async function route(request,env,runnerSource,options={}){
       });return json(state);
     }
     let m;
+    if(path==='/api/connectors/feishu/bootstrap/start'&&request.method==='POST')return json(await startBootstrap(p,user));
+    if((m=/^\/api\/connectors\/feishu\/bootstrap\/([\w-]+)\/(poll|authorize)$/.exec(path))&&request.method==='POST'){
+      const result=await (m[2]==='poll'?pollBootstrap:bootstrapOAuth)(p,user,m[1]);
+      if(result.state==='completed'&&env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});return json(result);
+    }
     if(path==='/api/meetings/recent'&&request.method==='GET'){
       const source=await p.store.connection(user,'feishu');
       if(source?.status!=='connected'||!source.credential)throw new Fault(409,'meeting_authorization_required');

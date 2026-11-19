@@ -52,17 +52,18 @@ export class Platform {
     for(const item of catalog){
       const connection=connections.find(c=>c.provider===item.id);
       const config=item.auth==='oauth' ? await this.config(user,item.id) : null;
-      connectors.push({...item,discovery:connection?.identity?.discovery??(item.id==='feishu'&&config?.appType==='store'?'events':null),storeAvailable:item.id==='feishu'&&this.env.PA_FEISHU_STORE_ENABLED==='true',connectionId:connection?.id,status:connection?.status??'disconnected',identity:connection?.identity,lastSync:connection?.synced_at,error:connection?.error,configured:item.auth==='oauth'?!!(config.clientId&&config.clientSecret):!!connection?.credential||(this.legacyUser(user)&&!!this.env.PA_BIGMODEL_KEY),clientId:config?.clientId??'',callback:`${this.env.PA_ORIGIN}/api/oauth/${item.id}/callback`,setup:oauthProviders[item.id]?.setup});
+      const setupStatus=item.id==='feishu'?await this.store.one('SELECT state,error FROM pa_feishu_setups WHERE user_id=?',user):null;
+      connectors.push({...item,setupStatus,discovery:connection?.identity?.discovery??(item.id==='feishu'&&config?.appType==='store'?'events':null),storeAvailable:item.id==='feishu'&&this.env.PA_FEISHU_STORE_ENABLED==='true',connectionId:connection?.id,status:connection?.status??'disconnected',identity:connection?.identity,lastSync:connection?.synced_at,error:connection?.error,configured:item.auth==='oauth'?!!(config.clientId&&config.clientSecret):!!connection?.credential||(this.legacyUser(user)&&!!this.env.PA_BIGMODEL_KEY),clientId:config?.clientId??'',callback:`${this.env.PA_ORIGIN}/api/oauth/${item.id}/callback`,setup:oauthProviders[item.id]?.setup});
     }
     const latest=await this.store.one("SELECT state,payload,updated_at FROM pa_receipts WHERE user_id=? AND id LIKE 'run-%' ORDER BY updated_at DESC LIMIT 1",user);
     return {connectors,projects:await this.store.all('SELECT * FROM pa_projects WHERE user_id=? ORDER BY name',user),tasks:await this.store.all('SELECT * FROM pa_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 100',user),scheduler:!!this.env.PA_USER_JOBS||!!this.env.PA_BRIDGE_ENABLED,schedulerLast:latest?{status:latest.state,at:latest.updated_at,error:latest.payload.error??null}:null};
   }
   async begin(user,provider,options={}) {
-    const config=provider==='feishu'&&options.store?storeConfig(this.env):await this.config(user,provider); const info=oauthProviders[provider];
+    const config=options.config??(provider==='feishu'&&options.store?storeConfig(this.env):await this.config(user,provider)); const info=oauthProviders[provider];
     if(!config.clientId||!config.clientSecret)throw new Fault(409,'oauth_configuration_required');
     const state=random(), verifier=random();
     await this.store.run('DELETE FROM pa_oauth WHERE expires_at<?',this.now());
-    await this.store.run('INSERT INTO pa_oauth VALUES(?,?,?,?,?)',await hash(state),user,provider,await seal(this.env.PA_ENCRYPTION_KEY,{verifier,config},`oauth:${user}:${provider}`),this.now()+600000);
+    await this.store.run('INSERT INTO pa_oauth VALUES(?,?,?,?,?)',await hash(state),user,provider,await seal(this.env.PA_ENCRYPTION_KEY,{verifier,config,replaceConnection:options.replaceConnection===true,expectedFeishuOpenId:options.expectedFeishuOpenId},`oauth:${user}:${provider}`),this.now()+600000);
     const url=new URL(info.authorize);
     for(const [name,value] of Object.entries({client_id:config.clientId,redirect_uri:`${this.env.PA_ORIGIN}/api/oauth/${provider}/callback`,response_type:'code',scope:config.scope??info.scope,state,code_challenge:await challenge(verifier),code_challenge_method:'S256'}))url.searchParams.set(name,value);
     return url.href;
@@ -103,31 +104,44 @@ export class Platform {
     if(provider==='feishu'&&!token.refresh_token)throw new Fault(409,'feishu_offline_scope_required');
     token.oauthClient=config;
     const identity=await this.providers.identity(provider,token.access_token);
-    if(provider==='feishu')Object.assign(identity,{appId:config.clientId,appType:config.appType??'custom',discovery:config.appType==='store'?'events':'search'});
     const finalUser=options.finalUser?await options.finalUser(identity):user;
     if(!finalUser||typeof finalUser!=='string')throw new Fault(403,'login_rejected');
-    const id=`${provider}-${await hash(finalUser)}`;
+    if(provider==='feishu')return this.acceptFeishu(finalUser,token,config,{identity,...pending});
     const previous=await this.store.connection(finalUser,provider);
-    if(previous && previous.status!=='disconnected'&&previous.identity.id!==identity.id)throw new Fault(409,'different_account_disconnect_first');
-    const connection=await this.store.connect({id,user:finalUser,provider,kind:provider==='feishu'?'meeting':'project',identity,credential:await seal(this.env.PA_ENCRYPTION_KEY,token,id)});
-    if(provider==='feishu'){
-      if(previous&&(previous.identity.id!==identity.id||previous.identity.appId!==identity.appId)){await this.store.run('DELETE FROM pa_sources WHERE connection_id=?',id);await this.store.run('DELETE FROM pa_feishu_inbox WHERE connection_id=?',id);}
-      await this.store.run('INSERT OR IGNORE INTO pa_sources(connection_id,user_id,enrolled_at) VALUES(?,?,?)',id,finalUser,this.now());
-      if(config.appType==='store'){
-        try{await subscribeMinutes(this,connection,token.access_token);}catch(error){
-          const permission=error.code==='feishu_api_99991672',reauth=error.status===401;
-          const code=permission?'feishu_admin_approval_required':reauth?'reauthorization_required':'feishu_event_subscription_failed';
-          await this.store.run('UPDATE pa_connections SET status=?,error=? WHERE id=?',permission||reauth?'needs_auth':'connected',code,id);
-          throw new Fault(permission?403:reauth?401:502,code);
-        }
-      }
-      return connection;
-    }
+    const id=previous?.id??`${provider}-${await hash(finalUser)}`;
+    if(previous&&previous.status!=='disconnected'&&previous.identity.id!==identity.id)throw new Fault(409,'different_account_disconnect_first');
+    const connection=await this.store.connect({id,user:finalUser,provider,kind:'project',identity,credential:await seal(this.env.PA_ENCRYPTION_KEY,token,id)});
     try{await this.sync(finalUser,connection.id);}catch(error){
       // Identity is already verified and the credential saved. A project API
       // outage must not strand a first-time user outside the recovery UI.
       if(!options.deferSyncFailure)throw error;
       connection.syncError=true;
+    }
+    return connection;
+  }
+  async acceptFeishu(user,token,config,{identity,expectedFeishuOpenId,replaceConnection=false}={}){
+    if(!token.refresh_token)throw new Fault(409,'feishu_offline_scope_required');
+    identity??=await this.providers.identity('feishu',token.access_token);
+    if(expectedFeishuOpenId&&identity.id!==expectedFeishuOpenId)throw new Fault(409,'feishu_bootstrap_account_mismatch');
+    Object.assign(identity,{appId:config.clientId,appType:config.appType??'custom',discovery:config.appType==='store'?'events':'search'});
+    if(config.bootstrap)identity.onboarding='scan';
+    const previous=await this.store.connection(user,'feishu'),id=previous?.id??'feishu-'+await hash(user);
+    if(previous&&previous.status!=='disconnected'&&previous.identity.id!==identity.id&&!(replaceConnection&&expectedFeishuOpenId===identity.id))throw new Fault(409,'different_account_disconnect_first');
+    token.oauthClient=config;
+    const connection=await this.store.connect({id,user,provider:'feishu',kind:'meeting',identity,credential:await seal(this.env.PA_ENCRYPTION_KEY,token,id)});
+    if(config.bootstrap){
+      await this.store.putSetting(user,'feishu',await seal(this.env.PA_ENCRYPTION_KEY,config,`settings:${user}:feishu`));
+      await this.store.run("UPDATE pa_feishu_setups SET state='completed',error=NULL WHERE id=? AND user_id=?",config.bootstrap.setupId,user);
+    }
+    if(previous&&(previous.identity.id!==identity.id||previous.identity.appId!==identity.appId)){await this.store.run('DELETE FROM pa_sources WHERE connection_id=?',id);await this.store.run('DELETE FROM pa_feishu_inbox WHERE connection_id=?',id);}
+    await this.store.run('INSERT OR IGNORE INTO pa_sources(connection_id,user_id,enrolled_at,cursor) VALUES(?,?,?,?)',id,user,this.now(),JSON.stringify(config.bootstrap?{bootstrapDone:true}:{}));
+    if(config.appType==='store'){
+      try{await subscribeMinutes(this,connection,token.access_token);}catch(error){
+        const permission=error.code==='feishu_api_99991672',reauth=error.status===401;
+        const code=permission?'feishu_admin_approval_required':reauth?'reauthorization_required':'feishu_event_subscription_failed';
+        await this.store.run('UPDATE pa_connections SET status=?,error=? WHERE id=?',permission||reauth?'needs_auth':'connected',code,id);
+        throw new Fault(permission?403:reauth?401:502,code);
+      }
     }
     return connection;
   }
