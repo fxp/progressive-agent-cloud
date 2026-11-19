@@ -1,6 +1,6 @@
 # Self-host Progressive Agent
 
-Use one stable HTTPS origin for the workbench and all OAuth callbacks. Additional landing-page domains redirect `/app` and `/api` to this origin, except the authenticated Feishu event webhook, which can be served directly on a custom domain. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel and GitHub Actions.
+Use one stable HTTPS origin for the workbench and all OAuth callbacks. Additional landing-page domains redirect `/app` and `/api` to this origin, except the authenticated Feishu event webhook, which can be served directly on a custom domain. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel or isolated Codex / Claude Code containers on GitHub Actions.
 
 ## Deploy infrastructure
 
@@ -23,7 +23,7 @@ Set shared app secrets with `npx wrangler secret put NAME` for each variable bel
 | PA_LINEAR_CLIENT_ID | Optional Linear OAuth client ID |
 | PA_LINEAR_CLIENT_SECRET | Optional Linear secret |
 
-Configuration vars in wrangler.jsonc: `PA_AUTH_MODE=github`, `PA_ORIGIN=https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev`, and `PA_SIGNUP_MODE=open` for public signup. For a private pilot, use `PA_SIGNUP_MODE=allowlist` plus `PA_ALLOWED_GITHUB_LOGINS=alice,bob`; missing signup mode also uses the allowlist. Keys identify accounts by immutable GitHub user ID, not email. A globally configured model key is not available to new users. Each user supplies their own BigModel key in the workbench.
+Configuration vars in wrangler.jsonc: `PA_AUTH_MODE=github`, `PA_ORIGIN=https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev`, and `PA_SIGNUP_MODE=open` for public signup. For a private pilot, use `PA_SIGNUP_MODE=allowlist` plus `PA_ALLOWED_GITHUB_LOGINS=alice,bob`; missing signup mode also uses the allowlist. Keys identify accounts by immutable GitHub user ID, not email. A globally configured model key is not available to new users. Each user supplies their own selected Agent key in the workbench. Codex requires a Responses-compatible HTTPS base URL and Claude Code an Anthropic Messages-compatible HTTPS base URL; both require an explicit model. See [CONNECTOR_PLUGINS.md](CONNECTOR_PLUGINS.md) for credential boundaries and `PA_AGENT_ALLOWED_HOSTS`.
 
 Deploy with `npm run deploy`, open `/app`, and complete GitHub login, Feishu authorization and Agent setup. Linear is optional. Bind a project to a writable repository and save to install the runner.
 

@@ -1,7 +1,8 @@
+import {prepareCLI} from './runtime/cli.mjs';
 // Managed by Progressive Agent Connector v1
 // Installed into a selected repository; source code never contains credentials.
 import {execFileSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync,lstatSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,lstatSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -36,9 +37,18 @@ async function list(path,query={}){
 async function upload(name,bytes){const body=new FormData();body.append('file',new Blob([bytes]),name);return (await api('files',body)).id;}
 const message=text=>({type:'user.message',content:[{type:'text',text}]});
 async function prepare(){
-  if(!process.env.PA_BIGMODEL_KEY)throw Error('Managed Agent credential missing');
   const task=await platform('claim',{});
   if(task.binding.repo!==process.env.GITHUB_REPOSITORY)throw Error('Wrong repository');
+  if(task.execution?.runtime==='cli'){
+    const credential=JSON.parse(process.env.PA_AGENT_CONFIG??'{}');if(credential.provider!==task.execution.id||!credential.apiKey)throw Error('Selected Agent credential missing');
+    let result;try{result=await prepareCLI({task,credential,directory,platform});}finally{rmSync(join(directory,'cli-runtime'),{recursive:true,force:true});}
+    const {patch,session,reused}=result;
+    git(['checkout','--detach',session.base]);writeFileSync(join(directory,'change.patch'),patch);
+    const {cliArtifact,...safe}=task;writeFileSync(join(directory,'task.json'),JSON.stringify({...safe,session,checksum:checksum(patch)}));
+    writeFileSync(process.env.GITHUB_OUTPUT,'base='+session.base+'\n',{flag:'a'});console.log('Coding CLI patch ready; independent verification follows'+(reused?' (reused)':''));return;
+  }
+  if(!process.env.PA_BIGMODEL_KEY)throw Error('Managed Agent credential missing');
+
   let session=task.session;
   if(!session&&task.sessionIntent){
     const matches=(await list('sessions')).filter(s=>s.metadata?.pa_task===task.id);

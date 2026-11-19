@@ -111,12 +111,17 @@ export async function route(request,env,runnerSource,options={}){
     if(path==='/api/state'&&request.method==='GET'){
       const state=await p.state(user);
       state.account=githubAuth?await p.store.one('SELECT id,login FROM pa_users WHERE id=?',user):null;
+      state.tasks=state.tasks.map(row=>{const {cliArtifact,...payload}=row.payload;return {...row,payload};});
       state.projects=state.projects.map(project=>{
         if(!project.binding)return project;
         const {runnerCredential,runnerTokenHash,...binding}=project.binding;return {...project,binding};
       });return json(state);
     }
     let m;
+    if((m=/^\/api\/connectors\/([\w-]+)\/actions\/([\w-]+)$/.exec(path))&&request.method==='POST'){
+      const action=p.registry.get(m[1]).actions?.[m[2]];if(typeof action!=='function')throw new Fault(404,'connector_action_not_found');
+      return json(await action({platform:p,user},await body(request)));
+    }
     if(path==='/api/connectors/gitlab/token'&&request.method==='POST')return json(await p.saveGitlab(user,await body(request)));
     if(path==='/api/connectors/meeting-webhook/rotate'&&request.method==='POST')return json(await rotateWebhook(p,user));
     if(path==='/api/connectors/feishu/bootstrap/start'&&request.method==='POST')return json(await startBootstrap(p,user));
@@ -139,8 +144,8 @@ export async function route(request,env,runnerSource,options={}){
       return json({items:page.items,hasMore:!!page.nextPage,since,until,source:cursor});
     }
     if(path==='/api/check'&&request.method==='POST')return json(await enqueueUser(p,user,{reason:'manual'}));
-    if(path==='/api/agents/bigmodel/settings'&&request.method==='POST'){
-      await p.saveAgent(user,await body(request));const changed=await execution.refreshAgentSecrets(user);
+    if((m=/^\/api\/agents\/([\w-]+)\/settings$/.exec(path))&&request.method==='POST'){
+      if(m[1]==='bigmodel')await p.saveAgent(user,await body(request));else await p.saveCodingAgent(user,m[1],await body(request));const changed=await execution.refreshAgentSecrets(user,m[1]);
       if(env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});return json({saved:true,...changed});
     }
     if((m=/^\/api\/oauth\/(github|linear|feishu)\/(start|callback)$/.exec(path))&&request.method==='GET'){
@@ -164,8 +169,7 @@ export async function route(request,env,runnerSource,options={}){
     }
     if(path==='/api/repositories'&&request.method==='GET'){
       const conn=await p.store.own('connections',url.searchParams.get('connection'),user);
-      if(conn.provider!=='github')throw new Fault(400,'github_connection_required');
-      return json(await p.providers.repositories(await p.access(conn)));
+      return json(await p.registry.get(conn.provider,'repository').repositories({platform:p},await p.access(conn)));
     }
     if((m=/^\/api\/projects\/([\w-]+)\/(bind|install|unbind)$/.exec(path))&&request.method==='POST'){
       if(m[2]==='unbind'){await p.unbind(user,m[1]);return json({unbound:true});}

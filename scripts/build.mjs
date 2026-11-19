@@ -13,7 +13,11 @@ function collect(dir,prefix=''){
   }
 }
 collect(join(root,'dist'));
-writeFileSync(join(root,'worker/assets.generated.mjs'),'export const assets='+JSON.stringify(assets)+';\nexport const runnerSource='+JSON.stringify(readFileSync(join(root,'platform/runner.mjs'),'utf8'))+';\n');
+writeFileSync(join(root,'platform/runtime/driver-source.mjs'),'export const containerDriver='+JSON.stringify(readFileSync(join(root,'platform/runtime/container-driver.mjs'),'utf8'))+';\n');
+const runnerBuild=await build({entryPoints:[join(root,'platform/runner.mjs')],bundle:true,write:false,format:'esm',platform:'node',target:'node22'});
+const bundledRunner='// Managed by Progressive Agent Connector v1\n'+runnerBuild.outputFiles[0].text;
+
+writeFileSync(join(root,'worker/assets.generated.mjs'),'export const assets='+JSON.stringify(assets)+';\nexport const runnerSource='+JSON.stringify(bundledRunner)+';\n');
 mkdirSync(join(root,'dist/server'),{recursive:true});
 await build({entryPoints:[join(root,'worker/index.mjs')],outfile:join(root,'dist/server/index.js'),bundle:true,format:'esm',platform:'browser',target:'es2023',minify:false});
 if(existsSync(join(root,'.openai/hosting.json'))){

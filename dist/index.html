@@ -59,7 +59,7 @@
             <p class="task-intro">从原话中整理目标、约束和验收条件。</p>
             <div class="project-binding"><span class="project-icon">F<span>◆</span></span><div><span class="muted-label">所属项目</span><strong>Focus Board</strong><code>acme/focus-board</code></div><span class="binding-check">✓</span></div>
             <div class="acceptance"><span class="muted-label">验收条件</span><p><span>✓</span> 全部、指定负责人、未分配</p><p><span>✓</span> 列表和计数同步更新</p><p><span>✓</span> 保持顺序，补充测试</p></div>
-            <div class="agent-choice"><span class="muted-label">执行器</span><button id="agent-toggle" type="button" aria-haspopup="menu" aria-expanded="false">BigModel Managed <span>⌄</span></button><div id="agent-menu" role="menu" hidden><button role="menuitem" data-agent="BigModel Managed">BigModel Managed · 已验证</button><button role="menuitem" data-agent="Claude Code">Claude Code · 已有适配</button><button role="menuitem" data-agent="自定义执行器">自定义执行器 · 接口规划</button></div></div>
+            <div class="agent-choice"><span class="muted-label">执行器</span><button id="agent-toggle" type="button" aria-haspopup="menu" aria-expanded="false">BigModel Managed <span>⌄</span></button><div id="agent-menu" role="menu" hidden><button role="menuitem" data-agent="BigModel Managed">BigModel Managed · 已验证</button><button role="menuitem" data-agent="Codex CLI">Codex CLI · 已验证</button><button role="menuitem" data-agent="Claude Code">Claude Code · 已验证</button><button role="menuitem" data-agent="自定义执行器">自定义执行器 · 插件扩展</button></div></div>
           </div>
           <div class="run-pane">
             <div class="run-header"><span class="run-orb" aria-hidden="true">✳</span><span>一次有上下文的执行</span></div>
@@ -83,25 +83,24 @@
     </section>
 
     <section class="connections" id="connectors">
-      <div class="shell connections-inner"><div class="connection-copy"><span class="caption-label">YOUR STACK, CONNECTED</span><h2>接上你的会议、<br>项目和 Agent。</h2><p>从已有的项目平台同步上下文。<br>让待办找到仓库，交给合适的 Agent。</p><a class="text-link" href="design.html#connectors">查看连接器契约 <span aria-hidden="true">＋</span></a><a class="text-link project-research-link" href="project-sources.html">项目来源选型</a><p class="connection-note">按实际验证状态展示。项目来源为接入规划。</p></div>
-      <div class="connector-panel"><div class="connector-tabs" role="tablist" aria-label="连接器类型"><button role="tab" aria-selected="true" data-connector="sources">会议来源</button><button role="tab" aria-selected="false" data-connector="projects">项目来源</button><button role="tab" aria-selected="false" data-connector="agents">执行 Agent</button><button role="tab" aria-selected="false" data-connector="delivery">仓库与回填</button></div><div id="connector-list" role="tabpanel" aria-label="连接器状态"></div><div class="connector-foot"><span>+</span><p>接入你的工具，从一个适配器开始。</p></div></div></div>
+      <div class="shell connections-inner"><div class="connection-copy"><span class="caption-label">YOUR STACK, CONNECTED</span><h2>接上你的会议、<br>项目和 Agent。</h2><p>从已有的项目平台同步上下文。<br>让待办找到仓库，交给合适的 Agent。</p><a class="text-link" href="https://github.com/fxp/progressive-agent-cloud/blob/main/docs/CONNECTOR_PLUGINS.md">查看连接器契约 <span aria-hidden="true">＋</span></a><a class="text-link project-research-link" href="project-sources.html">项目来源选型</a><p class="connection-note">按实际状态标注已验证、可连接与规划中的能力。</p></div>
+      <div class="connector-panel"><div class="connector-tabs" role="tablist" aria-label="连接器类型"><button role="tab" aria-selected="true" data-connector="sources">会议来源</button><button role="tab" aria-selected="false" data-connector="projects">项目来源</button><button role="tab" aria-selected="false" data-connector="agents">执行 Agent</button><button role="tab" aria-selected="false" data-connector="repositories">代码仓库</button><button role="tab" aria-selected="false" data-connector="delivery">成果回传</button></div><div id="connector-list" role="tabpanel" aria-label="连接器状态"></div><div class="connector-foot"><span>+</span><p>接入你的工具，从一个适配器开始。</p></div></div></div>
     </section>
 
     <section class="open-section shell" id="open">
-      <div class="open-panel"><div class="open-copy"><span class="caption-label">DESIGNED TO BE OPEN</span><h2>把你的开发方式，<br>留在你手里。</h2><p>自托管核心，选择自己的会议工具、代码仓库与执行 Agent。<br>从一个项目起步，也为社区适配器留好接口。</p><div class="open-actions"><a class="button white-button" href="design.html">阅读完整设计</a><a class="button dark-outline" href="https://github.com/fxp/progressive-agent-cloud" target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a></div><span class="release-note">Apache-2.0 · 可独立部署 · 数据与授权按用户隔离</span></div><div class="interface-preview"><div class="interface-top"><span>connector.ts</span><span>接口草案</span></div><pre><span class="syntax-purple">interface</span> <span class="syntax-green">MeetingSource</span> {
-  discover(cursor): <span class="syntax-green">Meeting[]</span>
-  transcript(id): <span class="syntax-green">Transcript</span>
-}
+      <div class="open-panel"><div class="open-copy"><span class="caption-label">DESIGNED TO BE OPEN</span><h2>把你的开发方式，<br>留在你手里。</h2><p>自托管核心，选择自己的会议工具、代码仓库与执行 Agent。<br>从一个项目起步，也为社区适配器留好接口。</p><div class="open-actions"><a class="button white-button" href="design.html">阅读完整设计</a><a class="button dark-outline" href="https://github.com/fxp/progressive-agent-cloud" target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a></div><span class="release-note">Apache-2.0 · 可独立部署 · 数据与授权按用户隔离</span></div><div class="interface-preview"><div class="interface-top"><span>connector.ts</span><span>API v1</span></div><pre><span class="syntax-purple">type</span> <span class="syntax-green">ConnectorRole</span> =
+  | 'meeting'
+  | 'project'
+  | 'agent'
+  | 'repository'
+  | 'delivery'
 
-<span class="syntax-purple">interface</span> <span class="syntax-green">AgentExecutor</span> {
-  start(task, project): <span class="syntax-green">Run</span>
-  events(run, cursor): <span class="syntax-green">Event[]</span>
-  collect(run): <span class="syntax-green">Artifact[]</span>
-}</pre><div class="interface-bottom">同一份任务契约，连接不同执行方式。</div></div></div>
+<span class="syntax-purple">const</span> registry = <span class="syntax-purple">new</span> ConnectorRegistry()
+registry.register(plugin)</pre><div class="interface-bottom">同一份任务契约，连接不同执行方式。</div></div></div>
     </section>
     <section class="faq shell" aria-labelledby="faq-title"><h2 id="faq-title">开始之前，你可能想知道</h2><div class="faq-list">
       <details><summary>会自动执行会议里所有的待办吗？</summary><p>产品设计中，项目决定执行策略。任务先确认项目、验收条件和权限，信息不齐会进入待确认。团队可以为指定项目和来源打开自动执行。</p></details>
-      <details><summary>可以用我自己的 Agent 和代码仓库吗？</summary><p>可以通过适配器接入。当前实现已有 BigModel、Claude Code 等执行路径，云端完整试点使用 BigModel 和 GitHub。更多 Agent 与代码托管平台会按统一契约逐步接入。</p></details>
+      <details><summary>可以用我自己的 Agent 和代码仓库吗？</summary><p>可以通过适配器接入。当前支持 BigModel Managed Agent、Codex CLI 和 Claude Code。Codex 与 Claude Code 已通过兼容模型网关完成云端开发、测试、PR 和回填；更多工具可通过五类插件接口扩展。</p></details>
       <details><summary>Mac 关机以后还能运行吗？</summary><p>云端试点的发现、接力、编码、测试和回填都在云端执行。本机接力停用的验收已经通过，物理关机尚未实测。使用本地 Agent 时，需要对应执行主机在线。</p></details>
       <details><summary>现在可以部署开源版吗？</summary><p>可以。开源版提供 Cloudflare Workers、D1 与 Queues 的部署配置，附授权指南和自动测试。GitHub、Linear 与飞书授权、Agent 密钥均按用户隔离；跨组织飞书授权受应用发布范围限制。</p></details>
     </div></section>
