@@ -119,6 +119,9 @@ test('repair requires the current runner and never retries a cancelled run',asyn
  const f=fixture(),t=await rejected(f,false);await f.ex.tick();let row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.payload.error,'runner_installation_required');assert.equal(f.counters.dispatch,1);
  f.setRunState({status:'completed',conclusion:'cancelled'});await f.ex.tick();row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.payload.repairRevision,undefined);assert.equal(f.counters.dispatch,1);f.env.DB.raw.close();
 });
+test('disconnecting the meeting source stops future automatic correction dispatch',async()=>{
+ const f=fixture(),t=await rejected(f);await f.p.disconnect(owner,t.meeting.id);await f.ex.tick();assert.equal(f.counters.dispatch,1);assert.equal((await f.p.store.own('tasks',t.id,owner)).payload.repairRevision,undefined);f.env.DB.raw.close();
+});
 for(const provider of ['github','linear'])test(`${provider}: OAuth → sync → bind → meeting → cloud run → PR → original requirement; replay twice`,async()=>{
  const f=fixture(provider);const flow=await queued(f);
  const result=await f.ex.complete(flow.project,flow.complete);assert.match(result.pr,/pull\/1$/);

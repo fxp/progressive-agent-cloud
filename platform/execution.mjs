@@ -191,7 +191,7 @@ export class Execution {
     const gh=(path,body)=>this.p.providers.gh(token,'/repos/'+b.repo+path,body);
     if(row.status==='running'||row.status==='failed'){
       const run=await gh('/actions/runs/'+row.payload.githubRunId);
-      if(run.status==='completed'&&run.conclusion==='failure'&&row.payload.fidelityReview?.approved===false&&!row.payload.repairRevision&&b.automatic){
+      if(run.status==='completed'&&run.conclusion==='failure'&&row.payload.fidelityReview?.approved===false&&!row.payload.repairRevision&&b.automatic&&b.sourceEnabled&&meeting?.status==='connected'){
         if(b.executionVersion!=='evidence-repair-v1')throw new Fault(409,'runner_installation_required');
         row.payload.repairRevision=1;
         row.payload.repairFeedback=row.payload.fidelityReview.violations;
