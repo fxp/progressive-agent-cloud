@@ -56,6 +56,12 @@ The coding specification carries these citations and explicitly forbids expandin
 
 The reviews use the connected user's model key. They are semantic checks, not a formal guarantee of correctness. Source records remain untrusted data, and human-confirmed requirements are labeled separately from Feishu citations. No transcript-export permission is added.
 
+## Fidelity-fix live acceptance
+
+A new native synthetic meeting exercised the fix without manual requirement injection. Its source TODOs omitted detailed conditions that remained in the meeting summary. The cloud task retained exact citations covering the closed All/High option set, counts 3 → 1 → 3, empty state, ordering/immutability and explicit exclusions. An invalid extraction was rejected before task creation and retried safely. The first code output was blocked before PR publication for missing UI coverage; one correction reused the same task, original issue and Agent session. The corrected patch passed 17 independent feature tests and the code review. A browser check confirmed exactly two options and the original behaviors. Published patch/file digests matched the reviewed artifacts.
+
+Two later scheduled checks completed successfully with unchanged task/session/current-run/revision, one draft PR and one unchanged automatic result comment. The failed first run is retained as correction history, not presented as a first-attempt success. The platform suite passes 106 tests, including cancellation/disconnect, stale-claim and uncertain-dispatch cases.
+
 ## Official implementations
 
 - [Node SDK app registration](https://github.com/larksuite/node-sdk/blob/main/README.zh.md#一键创建应用)

@@ -43,6 +43,7 @@ Follow [SELF_HOST.md](docs/SELF_HOST.md) for callback URLs, permissions and secr
 - Per-user encrypted Agent keys; installed repository secrets never use another user's key.
 - A Cloudflare Queue job for each user, independent retries and a dead-letter queue.
 - Durable meeting receipts, task leases, execution/session reconciliation and idempotent PR/result comments.
+- Cited acceptance conditions supplemented from meeting notes, independent grounding and code reviews, and one bounded correction without creating another task or Agent session.
 - Repository claims prevent two workspaces from overwriting one repository's execution secrets.
 - Onboarding, automatic progress refresh, manual recheck, reauthorization and disconnect controls.
 
