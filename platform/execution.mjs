@@ -174,6 +174,7 @@ export class Execution {
   async advance(row){
     if(row.payload.retryAfter>this.p.now())return;
     const p=await this.s.own('projects',row.project_id,row.user_id);const b=p.binding;
+    const meeting=await this.s.connection(row.user_id,'feishu');if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(409,'meeting_connector_not_active');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}
     if(!p.active||!b)throw new Fault(409,'project_not_available');
     const source=await this.s.own('connections',p.connection_id,row.user_id);
     const sourceToken=await this.p.access(source);
@@ -232,6 +233,7 @@ export class Execution {
     if(this.p.env.PA_AUTH_MODE==='github'&&!await this.s.one('SELECT id FROM pa_users WHERE id=? AND disabled_at IS NULL',p.user_id))throw new Fault(401,'runner_unauthorized');
     const c=await this.s.own('connections',p.binding.githubConnectionId,p.user_id);
     const agent=await this.s.connection(p.user_id,'bigmodel');
+    const meeting=await this.s.connection(p.user_id,'feishu');if(meeting?.identity.appType==='store'){if(meeting.status!=='connected')throw new Fault(401,'runner_unauthorized');await (await import('./feishu-store.mjs')).assertTenant(this.p,meeting);}
     if(c.status==='disconnected'||agent?.status!=='connected')throw new Fault(401,'runner_unauthorized');return p;
   }
   async claim(p,input){

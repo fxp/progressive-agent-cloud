@@ -1,6 +1,6 @@
 # Self-host Progressive Agent
 
-Use one stable HTTPS origin for the workbench and all OAuth callbacks. Additional landing-page domains redirect `/app` and `/api` to this origin. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel and GitHub Actions.
+Use one stable HTTPS origin for the workbench and all OAuth callbacks. Additional landing-page domains redirect `/app` and `/api` to this origin, except the authenticated Feishu event webhook, which can be served directly on a custom domain. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel and GitHub Actions.
 
 ## Deploy infrastructure
 
@@ -8,7 +8,7 @@ Use Node.js 22.13+ (24+ recommended). Install with `npm ci`, then run `npm test 
 
 Create a D1 database and both queues using the commands in README. Replace the placeholder database ID. Queue names must match producer and consumer entries; names must be unique within your Cloudflare account. Use separate databases/queues/apps for staging and production.
 
-Run `npm run db:migrate`. It checks whether the baseline schema exists, applies it only for an empty database, then applies the additive multiuser migration. Run before deploying this version; back up an existing database first. The migration preserves existing rows. `npm run db:migrate -- --local` selects local D1. To use another config, set `WRANGLER_CONFIG`.
+Run `npm run db:migrate`. It checks whether the baseline schema exists, applies it only for an empty database, then applies the additive multiuser and Feishu Store migrations. Run before deploying this version; back up an existing database first. The migrations preserve existing rows. `npm run db:migrate -- --local` selects local D1. To use another config, set `WRANGLER_CONFIG`.
 
 Generate two independent keys with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`. Store them using `npx wrangler secret put PA_SESSION_KEY` and `npx wrangler secret put PA_ENCRYPTION_KEY`. Preserve the encryption key: rotating it without re-encrypting stored rows makes credentials unreadable. Session-key rotation signs users out.
 
@@ -40,6 +40,10 @@ Create an OAuth App at [GitHub developer settings](https://github.com/settings/d
 Create an OAuth app at [Linear API settings](https://linear.app/settings/api/applications). Callback: `https://YOUR-ORIGIN/api/oauth/linear/callback`. Request `read issues:create comments:create`. Enable public availability if other Linear workspaces should authorize it. The integration uses PKCE; it omits the client secret for this PKCE flow. Project imports and comments use the authorizing user's token.
 
 ### Feishu
+
+There are two distinct discovery modes. A shared Store app is **not enabled by merely copying a custom app's scopes**. See [Feishu Store rollout](https://github.com/fxp/progressive-agent-cloud/blob/main/docs/FEISHU_STORE.md) for the opt-in implementation, platform checks, and remaining release gates.
+
+#### Organization-owned custom app
 
 Create or configure an app in [Feishu Developer Console](https://open.feishu.cn/app). Add callback `https://YOUR-ORIGIN/api/oauth/feishu/callback` in Security Settings. Enable and publish these user scopes: `auth:user.id:read`, `minutes:minutes.search:read`, `minutes:minutes.transcript:export`, `offline_access`. User authorization must return a refresh token.
 

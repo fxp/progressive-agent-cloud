@@ -1,3 +1,4 @@
+import {scanInbox} from './feishu-store.mjs';
 import {Fault,hash} from './security.mjs';
 
 // The cutoff never advances past late-indexed meetings. Search windows and
@@ -6,6 +7,7 @@ export async function scanSource(p,connection){
   const user=connection.user_id;await p.agentKey(user);
   const current=await p.store.own('connections',connection.id,user);
   if(current.status!=='connected'||!current.credential)throw new Fault(409,'meeting_connector_not_active');
+  if(current.identity.discovery==='events')return scanInbox(p,current);
   await p.store.run('INSERT OR IGNORE INTO pa_sources(connection_id,user_id,enrolled_at) VALUES(?,?,?)',connection.id,user,p.now());
   const source=await p.store.one('SELECT * FROM pa_sources WHERE connection_id=? AND user_id=?',connection.id,user);
   const cursor=JSON.parse(source.cursor);cursor.until??=p.now();cursor.offset??=0;

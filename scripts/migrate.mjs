@@ -5,4 +5,5 @@ const run=args=>execFileSync(process.platform==='win32'?'npx.cmd':'npx',['--no-i
 const result=JSON.parse(run(['--json','--command',"SELECT name FROM sqlite_master WHERE type='table' AND name='pa_connections'"]));
 if(!result[0]?.results?.length)process.stdout.write(run(['--file','drizzle/0000_connectors.sql']));
 process.stdout.write(run(['--file','drizzle/0001_multiuser.sql']));
+process.stdout.write(run(['--file','drizzle/0002_feishu_store.sql']));
 console.log('Database migrations applied. Existing data preserved.');

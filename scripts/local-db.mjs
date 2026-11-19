@@ -5,6 +5,7 @@ export function database(path=':memory:'){
  const exists=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='pa_connections'").get();
  if(!exists)db.exec(readFileSync(new URL('../drizzle/0000_connectors.sql',import.meta.url),'utf8'));
  db.exec(readFileSync(new URL('../drizzle/0001_multiuser.sql',import.meta.url),'utf8'));
+ db.exec(readFileSync(new URL('../drizzle/0002_feishu_store.sql',import.meta.url),'utf8'));
  const wrapper={
   raw:db,
   prepare(sql){

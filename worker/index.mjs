@@ -8,7 +8,7 @@ export default {
     const url=new URL(request.url),path=url.pathname;
     // OAuth cookies must stay on the registered callback host. Additional
     // public domains serve the landing page and forward workbench access.
-    if(env.PA_AUTH_MODE==='github'&&env.PA_ORIGIN&&url.origin!==env.PA_ORIGIN&&(path.startsWith('/api/')||path==='/app'||path.startsWith('/app/'))){
+    if(path!=='/api/webhooks/feishu'&&env.PA_AUTH_MODE==='github'&&env.PA_ORIGIN&&url.origin!==env.PA_ORIGIN&&(path.startsWith('/api/')||path==='/app'||path.startsWith('/app/'))){
       return Response.redirect(env.PA_ORIGIN+path+url.search,307);
     }
     if(path.startsWith('/api/'))return route(request,env,runnerSource);
