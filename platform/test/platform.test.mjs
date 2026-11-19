@@ -25,7 +25,7 @@ test('runtime fetch keeps the global receiver for OAuth and provider requests',a
 function fixture(provider='github'){
  const env={DB:database(),PA_ORIGIN:'https://example.test',PA_ENCRYPTION_KEY:Buffer.alloc(32,3).toString('base64'),PA_BIGMODEL_KEY:'test-model-key',PA_SERVICE_TOKEN:'test-service'};
  let projects=[{externalId:'external-project',name:'Focus Board',description:'Product work',url:'https://example.test/project',metadata:{teams:[{id:'team-1',name:'Product'}]}}];
- let taskId,head,pr,verify=true,backfillFailure=false;
+ let taskId,head,pr,verify=true,backfillFailure=false,dispatchFailure=false,workflowRuns=[],runState={};
  const counters={extract:0,issues:0,dispatch:0,pr:0,backfill:0,blobs:0};
  const providers={
   identity:async p=>({id:p+'-account',name:'Test Workspace'}),projects:async()=>projects,
@@ -33,10 +33,10 @@ function fixture(provider='github'){
   issue:async(p,t,project,task)=>{counters.issues++;return {id:'issue-1',url:p==='github'?'https://github.com/acme/board/issues/1':'https://linear.app/acme/issue/ABC-1'};},
   backfill:async()=>{counters.backfill++;if(backfillFailure)throw new Fault(502,'backfill_transient');},
   async gh(token,path,body,method){
-   if(path.includes('/actions/workflows/')&&path.includes('/runs?'))return {workflow_runs:[]};
-   if(path.endsWith('/dispatches')){counters.dispatch++;taskId=body.inputs.task_id;return {};}
+   if(path.includes('/actions/workflows/')&&path.includes('/runs?'))return {workflow_runs:workflowRuns};
+   if(path.endsWith('/dispatches')){counters.dispatch++;taskId=body.inputs.task_id;if(dispatchFailure)throw new Fault(502,'dispatch_response_lost');return {};}
    if(path.includes('/actions/runs/')&&path.includes('/jobs'))return {jobs:[{name:'verify',conclusion:verify?'success':'failure'}]};
-   if(path.includes('/actions/runs/'))return {run_attempt:1,path:WORKFLOW_PATH,display_title:'PA '+taskId,event:'workflow_dispatch',head_sha:'c'.repeat(40),html_url:'https://github.com/acme/board/actions/runs/9'};
+   if(path.includes('/actions/runs/'))return {...runState,run_attempt:1,path:WORKFLOW_PATH,display_title:'PA '+taskId,event:'workflow_dispatch',head_sha:'c'.repeat(40),html_url:'https://github.com/acme/board/actions/runs/9'};
    if(path.includes('/contents/'))return {sha:path.includes('runner.mjs')?'runner-sha':'workflow-sha'};
    if(path.includes('/git/ref/heads/')){if(head)return {object:{sha:head}};throw new Fault(502,'provider_http_404');}
    if(path.includes('/git/commits/')&&method===undefined)return {tree:{sha:'tree-base'},message:'[PA:'+taskId+']'};
@@ -70,7 +70,7 @@ function fixture(provider='github'){
   await p.store.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(ready.binding),ready.id);
   return {project:ready,meeting};
  }
- return {env,p,ex,providers,fetcher,counters,authorize,setup,setProjects:value=>projects=value,setVerify:value=>verify=value,setBackfillFailure:value=>backfillFailure=value};
+ return {env,p,ex,providers,fetcher,counters,authorize,setup,setProjects:value=>projects=value,setVerify:value=>verify=value,setBackfillFailure:value=>backfillFailure=value,setRunState:value=>runState=value,setRuns:value=>workflowRuns=value,setDispatchFailure:value=>dispatchFailure=value};
 }
 async function queued(f){
  const {project,meeting}=await f.setup();
@@ -93,9 +93,31 @@ for(const approved of [false,true])test('evidenced task publication '+(approved?
 });
 test('uncertain note supplementation remains needs_info even if a queued row is encountered',async()=>{
  const f=fixture(),{project,meeting}=await f.setup(),text='Focus Board should add title search.';
- f.p.fetch=async(url,options)=>{const extracting=JSON.parse(options.body).messages[0].content.startsWith('PA_FIDELITY_extract');return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(extracting?{actions:[{todoIds:['t1'],project:'Focus Board',criteria:[{source:'todo:t1',quote:text}]}]}:{reviews:[{index:0,approved:false,reason:'Missing search rules'}]})}}]});};
+ f.p.fetch=async(url,options)=>{const extracting=JSON.parse(options.body).messages[0].content.startsWith('PA_FIDELITY_extract');return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(extracting?{actions:[{todoIds:['t1'],project:'Focus Board',criteria:[{source:'todo:t1',quote:text}]}]}:{groups:[{indices:[0],approved:false,reason:'Missing search rules'}]})}}]});};
  const result=await f.p.ingest(meeting,{externalId:'uncertain',title:'Focus Board',transcript:text,sourceKind:'meeting_todos',sourceTodos:[{id:'t1',content:text}],sourceNotes:[]});
  const row=await f.p.store.own('tasks',result.taskIds[0],owner);assert.equal(row.status,'needs_info');await f.p.store.saveTask(row,'queued');await f.ex.tick();assert.equal((await f.p.store.own('tasks',row.id,owner)).status,'needs_info');assert.equal(f.counters.dispatch,0);assert.equal(f.counters.issues,0);f.env.DB.raw.close();
+});
+async function rejected(f,ready=true){
+ const t=await queued(f),row=await f.p.store.own('tasks',t.id,owner);
+ row.payload.fidelityVersion=1;row.payload.fidelityReview={approved:false,violations:['Missing UI option-set tests'],patchChecksum};await f.p.store.saveTask(row,'failed');
+ if(ready){t.project.binding.executionVersion='evidence-repair-v1';await f.p.store.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(t.project.binding),t.project.id);}
+ f.setRunState({status:'completed',conclusion:'failure'});return t;
+}
+test('one fidelity repair reuses task, issue and session, rejects stale run claims and stops after one revision',async()=>{
+ const f=fixture(),t=await rejected(f);await f.ex.tick();let row=await f.p.store.own('tasks',t.id,owner);
+ assert.equal(row.status,'dispatching');assert.equal(row.payload.repairRevision,1);assert.equal(row.payload.session.id,'session-1');assert.equal(row.payload.patchChecksum,undefined);assert.equal(row.payload.previousRejectedChecksum,patchChecksum);assert.equal(f.counters.issues,1);assert.equal(f.counters.dispatch,2);
+ f.setRuns([{id:9,display_title:'PA '+t.id}]);await f.ex.tick();assert.equal(f.counters.dispatch,2);
+ f.setRuns([{id:9,display_title:'PA '+t.id},{id:10,display_title:'PA '+t.id}]);await f.ex.tick();row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.payload.githubRunId,'10');
+ await assert.rejects(()=>f.ex.claim(t.project,{taskId:t.id,runId:'9'}),{code:'task_claimed_by_another_run'});await f.ex.claim(t.project,{taskId:t.id,runId:'10'});
+ row=await f.p.store.own('tasks',t.id,owner);row.payload.fidelityReview={approved:false,violations:['Still incomplete']};await f.p.store.saveTask(row,'failed');await f.ex.tick();assert.equal(f.counters.dispatch,2);assert.equal((await f.p.store.own('tasks',t.id,owner)).status,'failed');f.env.DB.raw.close();
+});
+test('an ambiguous repair dispatch is reconciled instead of dispatched again',async()=>{
+ const f=fixture(),t=await rejected(f);f.setDispatchFailure(true);await f.ex.tick();assert.equal((await f.p.store.own('tasks',t.id,owner)).status,'dispatching');
+ f.setRuns([{id:10,display_title:'PA '+t.id}]);await f.ex.tick();assert.equal(f.counters.dispatch,2);assert.equal((await f.p.store.own('tasks',t.id,owner)).payload.githubRunId,'10');f.env.DB.raw.close();
+});
+test('repair requires the current runner and never retries a cancelled run',async()=>{
+ const f=fixture(),t=await rejected(f,false);await f.ex.tick();let row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.payload.error,'runner_installation_required');assert.equal(f.counters.dispatch,1);
+ f.setRunState({status:'completed',conclusion:'cancelled'});await f.ex.tick();row=await f.p.store.own('tasks',t.id,owner);assert.equal(row.payload.repairRevision,undefined);assert.equal(f.counters.dispatch,1);f.env.DB.raw.close();
 });
 for(const provider of ['github','linear'])test(`${provider}: OAuth → sync → bind → meeting → cloud run → PR → original requirement; replay twice`,async()=>{
  const f=fixture(provider);const flow=await queued(f);

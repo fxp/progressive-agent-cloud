@@ -112,6 +112,11 @@ export async function route(request,env,runnerSource,options={}){
       const result=m[2]==='poll'?await pollBootstrap(p,user,m[1]):await bootstrapOAuth(p,user,m[1],await body(request));
       if(result.state==='completed'&&env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});return json(result);
     }
+    if((m=/^\/api\/meetings\/([A-Za-z0-9]{12,64})\/evidence$/.exec(path))&&request.method==='GET'){
+      const source=await p.store.connection(user,'feishu');
+      if(source?.status!=='connected'||source.identity.meetingContent!=='todos')throw new Fault(409,'meeting_connector_not_active');
+      return json(await p.providers.todoEvidence(await p.access(source),m[1]));
+    }
     if(path==='/api/meetings/recent'&&request.method==='GET'){
       const source=await p.store.connection(user,'feishu');
       if(source?.status!=='connected'||!source.credential)throw new Fault(409,'meeting_authorization_required');

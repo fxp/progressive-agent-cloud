@@ -151,7 +151,7 @@ export class Execution {
       // Both files are installed in a single commit; verify the workflow used by future runs.
       const installed=await gh('/contents/'+WORKFLOW_PATH+'?ref='+commit.sha);
       const installedRunner=await gh('/contents/.github/progressive-agent/runner.mjs?ref='+commit.sha);
-      b.runnerReady=true;b.workflowSha=installed.sha;b.runnerSha=installedRunner.sha;b.runnerTokenHash=await hash(secret);
+      b.runnerReady=true;b.executionVersion='evidence-repair-v1';b.workflowSha=installed.sha;b.runnerSha=installedRunner.sha;b.runnerTokenHash=await hash(secret);
       b.runnerCredential=await seal(this.p.env.PA_ENCRYPTION_KEY,secret,'runner:'+id);
       await this.s.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(b),id);
       return {installed:true,commit:commit.sha};
@@ -165,10 +165,10 @@ export class Execution {
     for(const connection of connections.slice(0,8)){
       try{await this.p.sync(connection.user_id,connection.id);synced.push(connection.id);}catch{ /* Error is persisted on the connector. */ }
     }
-    const rows=await this.s.all("SELECT * FROM pa_tasks WHERE status IN ('queued','backfilling','dispatching','running')"+(project?' AND project_id=?':owner?' AND user_id=?':'')+" ORDER BY updated_at LIMIT 20",...(project?[project.id]:owner?[owner]:[]));
+    const rows=await this.s.all("SELECT * FROM pa_tasks WHERE (status IN ('queued','backfilling','dispatching','running') OR (status='failed' AND json_extract(payload,'$.fidelityReview.approved')=0 AND COALESCE(json_extract(payload,'$.repairRevision'),0)=0))"+(project?' AND project_id=?':owner?' AND user_id=?':'')+" ORDER BY updated_at LIMIT 20",...(project?[project.id]:owner?[owner]:[]));
     for(const row of rows){
       const release=await this.s.lease('task:'+row.id,90000).catch(()=>null);if(!release)continue;
-      try{await this.advance(row);}catch(error){row.payload.error=error.code??'execution_failed';await this.s.saveTask(row,row.payload.result?'backfilling':'failed');}finally{await release();}
+      try{await this.advance(row);}catch(error){row.payload.error=error.code??'execution_failed';await this.s.saveTask(row,row.payload.result?'backfilling':row.status==='dispatching'&&error.code!=='dispatch_needs_reconciliation'?'dispatching':'failed');}finally{await release();}
     }
     return {synced:synced.length,processed:rows.length};
   }
@@ -189,23 +189,33 @@ export class Execution {
     if(!b.runnerReady){row.payload.error='runner_installation_required';await this.s.saveTask(row,'queued');return;}
     const agent=await this.s.connection(row.user_id,'bigmodel');if(agent?.status!=='connected')throw new Fault(409,'agent_not_connected');
     const gh=(path,body)=>this.p.providers.gh(token,'/repos/'+b.repo+path,body);
-    if(row.status==='running'){
+    if(row.status==='running'||row.status==='failed'){
       const run=await gh('/actions/runs/'+row.payload.githubRunId);
-      if(run.status==='completed'&&run.conclusion!=='success')throw new Fault(409,'cloud_runner_failed');
-      return;
+      if(run.status==='completed'&&run.conclusion==='failure'&&row.payload.fidelityReview?.approved===false&&!row.payload.repairRevision&&b.automatic){
+        if(b.executionVersion!=='evidence-repair-v1')throw new Fault(409,'runner_installation_required');
+        row.payload.repairRevision=1;
+        row.payload.repairFeedback=row.payload.fidelityReview.violations;
+        row.payload.rejectedRuns=[{id:row.payload.githubRunId,review:row.payload.fidelityReview}];
+        row.payload.previousRejectedChecksum=row.payload.patchChecksum;
+        delete row.payload.githubRunId;delete row.payload.patchChecksum;delete row.payload.fidelityReview;
+        row.payload.error=null;row.status='queued';await this.s.saveTask(row);
+      }else{
+        if(run.status==='completed'&&run.conclusion!=='success')throw new Fault(409,'cloud_runner_failed');
+        return;
+      }
     }
     if(!row.payload.original){
       row.payload.original=await this.p.providers.issue(source.provider,sourceToken,p,row.payload);
       await this.s.saveTask(row);
     }
     const prior=await gh('/actions/workflows/progressive-agent.yml/runs?event=workflow_dispatch&per_page=100');
-    const run=prior.workflow_runs.find(r=>r.display_title==='PA '+row.id);
+    const run=prior.workflow_runs.find(r=>r.display_title==='PA '+row.id&&!row.payload.rejectedRuns?.some(old=>old.id===String(r.id)));
     if(run){row.payload.githubRunId=String(run.id);row.payload.runUrl=run.html_url;await this.s.saveTask(row,'running');return;}
     if(row.status==='dispatching'){
       if(this.p.now()-row.updated_at>900000)throw new Fault(409,'dispatch_needs_reconciliation');
       return;
     }
-    await this.s.saveTask(row,'dispatching');
+    row.status='dispatching';await this.s.saveTask(row);
     await gh('/actions/workflows/progressive-agent.yml/dispatches',{ref:b.baseBranch,inputs:{task_id:row.id}});
   }
   async verification(user,id){
@@ -245,6 +255,7 @@ export class Execution {
     try{
       const fresh=await this.s.own('tasks',row.id,p.user_id);
       if(!['dispatching','running'].includes(fresh.status))throw new Fault(409,'task_not_claimable');
+      if(fresh.payload.rejectedRuns?.some(old=>old.id===input.runId))throw new Fault(409,'task_claimed_by_another_run');
       if(fresh.payload.githubRunId&&fresh.payload.githubRunId!==input.runId)throw new Fault(409,'task_claimed_by_another_run');
       fresh.payload.githubRunId=input.runId;
       await this.s.saveTask(fresh,'running');
@@ -285,7 +296,12 @@ export class Execution {
         const installed=await gh('/contents/'+WORKFLOW_PATH+'?ref='+run.head_sha);
         const installedRunner=await gh('/contents/.github/progressive-agent/runner.mjs?ref='+run.head_sha);
         if(run.path!==WORKFLOW_PATH||run.display_title!=='PA '+row.id||run.event!=='workflow_dispatch'||installed.sha!==p.binding.workflowSha||installedRunner.sha!==p.binding.runnerSha||!jobs.jobs.some(j=>j.name==='verify'&&j.conclusion==='success'))throw new Fault(409,'verification_not_confirmed');
-        const fidelity=await reviewChange(this.p,p.user_id,row.payload,input.files);
+        const baseline=[];
+        if(row.payload.fidelityVersion===1)for(const f of input.files){
+          try{const old=await gh('/contents/'+f.path.split('/').map(encodeURIComponent).join('/')+'?ref='+input.base);if(old.encoding==='base64')baseline.push({path:f.path,content:new TextDecoder().decode(unb64(old.content.replaceAll('\n','')))});}
+          catch(error){if(error.code!=='provider_http_404')throw error;baseline.push({path:f.path,missing:true});}
+        }
+        const fidelity=await reviewChange(this.p,p.user_id,row.payload,input.files,baseline);
         if(fidelity){
           row.payload.fidelityReview=fidelity;await this.s.saveTask(row);
           if(!fidelity.approved)throw new Fault(409,'requirement_fidelity_failed');
