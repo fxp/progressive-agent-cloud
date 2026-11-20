@@ -168,7 +168,7 @@ export async function route(request,env,runnerSource,options={}){
     if((m=/^\/api\/oauth\/(github|linear|feishu)\/(start|callback)$/.exec(path))&&request.method==='GET'){
       provider=m[1];
       const oauthOptions=provider==='feishu'&&url.searchParams.get('app')==='store'?{store:true}:{};
-      if(githubAuth&&provider==='github')oauthOptions.finalUser=async identity=>{requireAllowedLogin(env,identity.name);return user;};
+      if(githubAuth&&provider==='github')oauthOptions.finalUser=async identity=>{if('github:'+identity.id!==user)throw new Fault(403,'different_account_disconnect_first');await requireAdmission(p,user,identity.name);return user;};
       if(m[2]==='start')return Response.redirect(await p.begin(user,provider,oauthOptions),302);
       await p.callback(user,provider,url.searchParams,oauthOptions);
       if(env.PA_USER_JOBS)await enqueueUser(p,user,{reason:'manual'});
