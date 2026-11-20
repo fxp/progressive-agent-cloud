@@ -6,13 +6,14 @@ import {accountEnabled} from './invitations.mjs';
 
 export async function enqueueUser(p,user,{reason='cron'}={}){
   if(!p.env.PA_USER_JOBS)throw new Fault(503,'queue_not_configured');
-  if(!await accountEnabled(p,user))return {queued:false};
+  if(!await accountEnabled(p,user))return {queued:false,reason:'account_disabled'};
   const connections=await p.store.all("SELECT * FROM pa_connections WHERE user_id=? AND status='connected'",user);
-  if(!connections.some(c=>p.registry.has(c.provider,'meeting'))||!connections.some(c=>p.registry.has(c.provider,'agent')))return {queued:false};
+  if(!connections.some(c=>p.registry.has(c.provider,'meeting')))return {queued:false,reason:'meeting_not_connected'};
+  if(!connections.some(c=>p.registry.has(c.provider,'agent')))return {queued:false,reason:'agent_not_connected'};
   const bucket=Math.floor(p.now()/(reason==='cron'?300000:60000));
   const id='job-'+await hash(user+':'+(reason==='cron'?'cron':'manual')+':'+bucket);
   const inserted=await p.store.run("INSERT INTO pa_jobs VALUES(?,?,'queued',?,?,NULL) ON CONFLICT(id) DO NOTHING",id,user,p.now(),p.now());
-  if(!inserted.meta.changes)return {queued:false};
+  if(!inserted.meta.changes)return {queued:false,reason:'already_scheduled'};
   try{await p.env.PA_USER_JOBS.send({version:1,jobId:id,userId:user});}catch(error){await p.store.run("UPDATE pa_jobs SET state='failed',error='queue_send_failed' WHERE id=?",id);throw error;}
   return {queued:true};
 }

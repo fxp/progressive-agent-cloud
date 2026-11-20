@@ -190,10 +190,27 @@ for(const status of [401,502])test('a '+status+' failure in one source still dra
 });
 
 test('a revoked account cannot enqueue work and a repository authorization failure never suspends Feishu',async()=>{
- const f=fixture(),a=await f.setup('A');await f.p.store.run('UPDATE pa_users SET disabled_at=? WHERE id=?',f.p.now(),a.user);assert.deepEqual(await enqueueUser(f.p,a.user),{queued:false});assert.equal(f.sent.length,0);await f.p.store.run('UPDATE pa_users SET disabled_at=NULL WHERE id=?',a.user);await enqueueUser(f.p,a.user);
+ const f=fixture(),a=await f.setup('A');await f.p.store.run('UPDATE pa_users SET disabled_at=? WHERE id=?',f.p.now(),a.user);assert.deepEqual(await enqueueUser(f.p,a.user),{queued:false,reason:'account_disabled'});assert.equal(f.sent.length,0);await f.p.store.run('UPDATE pa_users SET disabled_at=NULL WHERE id=?',a.user);await enqueueUser(f.p,a.user);
  await consume({messages:[{body:f.sent[0],ack:()=>{},retry:()=>assert.fail('permanent error should be acknowledged')}]},f.env,'',{platform:f.p,execution:{tick:async()=>{throw new Fault(401,'repository_token_invalid');}},scan:async()=>({ingested:0})});assert.equal((await f.p.store.connection(a.user,'feishu')).status,'connected');f.env.DB.raw.close();
 });
 
 test('a source failure cannot reactivate a connector disconnected while discovery was in flight',async()=>{const f=fixture(),a=await f.setup('A');await enqueueUser(f.p,a.user);await consume({messages:[{body:f.sent[0],ack:()=>{},retry:()=>{}}]},f.env,'',{platform:f.p,execution:{tick:async()=>({processed:0})},scan:async()=>{await f.p.disconnect(a.user,a.meeting.id);throw new Fault(502,'late_provider_failure');}});const source=await f.p.store.connection(a.user,'feishu');assert.equal(source.status,'disconnected');assert.equal(source.credential,null);f.env.DB.raw.close();});
 
-test('removing an uninvited account from operator admission also blocks queued work and installed runners',async()=>{const f=fixture(),a=await f.setup('A'),secret='old-runner';const binding={...a.project.binding,runnerReady:true,runnerTokenHash:await (await import('../security.mjs')).hash(secret)};await f.p.store.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(binding),a.project.id);f.env.PA_SIGNUP_MODE='allowlist';f.env.PA_ALLOWED_GITHUB_LOGINS='B';assert.deepEqual(await enqueueUser(f.p,a.user),{queued:false});await assert.rejects(()=>new Execution(f.p,'').runnerProject(a.project.id,secret),{code:'runner_unauthorized'});f.env.DB.raw.close();});
+test('removing an uninvited account from operator admission also blocks queued work and installed runners',async()=>{const f=fixture(),a=await f.setup('A'),secret='old-runner';const binding={...a.project.binding,runnerReady:true,runnerTokenHash:await (await import('../security.mjs')).hash(secret)};await f.p.store.run('UPDATE pa_projects SET binding=? WHERE id=?',JSON.stringify(binding),a.project.id);f.env.PA_SIGNUP_MODE='allowlist';f.env.PA_ALLOWED_GITHUB_LOGINS='B';assert.deepEqual(await enqueueUser(f.p,a.user),{queued:false,reason:'account_disabled'});await assert.rejects(()=>new Execution(f.p,'').runnerProject(a.project.id,secret),{code:'runner_unauthorized'});f.env.DB.raw.close();});
+
+
+test('manual meeting checks explain missing setup and distinguish queue deduplication',async()=>{
+ const f=fixture();await f.p.register('user-A','A');
+ assert.deepEqual(await enqueueUser(f.p,'user-A'),{queued:false,reason:'meeting_not_connected'});
+ const meeting=await f.authorize('A','feishu');
+ const headers={cookie:await f.cookie('A'),origin:f.env.PA_ORIGIN,'content-type':'application/json'};
+ const check=path=>route(new Request(f.env.PA_ORIGIN+'/api/'+path,{method:'POST',headers,body:'{}'}),f.env,'',{providers:f.providers,fetcher:f.fetcher,now:f.p.now});
+ for(const path of ['check','connectors/'+meeting.id+'/sync']){
+  const response=await check(path);assert.equal(response.status,200);assert.deepEqual(await response.json(),{queued:false,reason:'agent_not_connected'});
+ }
+ assert.equal(f.sent.length,0);assert.equal((await f.p.store.all('SELECT * FROM pa_jobs')).length,0);
+ await f.p.saveAgent('user-A',{apiKey:'personal-key-A'});
+ assert.deepEqual(await (await check('connectors/'+meeting.id+'/sync')).json(),{queued:true});
+ assert.deepEqual(await (await check('check')).json(),{queued:false,reason:'already_scheduled'});
+ assert.equal(f.sent.length,1);f.env.DB.raw.close();
+});
