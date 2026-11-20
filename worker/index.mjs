@@ -6,9 +6,11 @@ export default {
   async queue(batch,env){await consume(batch,env,runnerSource);},
   async fetch(request,env){
     const url=new URL(request.url),path=url.pathname;
-    // OAuth cookies must stay on the registered callback host. Additional
-    // public domains serve the landing page and forward workbench access.
-    if(path!=='/api/webhooks/feishu'&&env.PA_AUTH_MODE==='github'&&env.PA_ORIGIN&&url.origin!==env.PA_ORIGIN&&(path.startsWith('/api/')||path==='/app'||path.startsWith('/app/')||path==='/invite'||path.startsWith('/invite/'))){
+    // Keep browser navigation on the canonical OAuth/cookie origin. Existing
+    // server clients retain their own authentication: cross-origin redirects
+    // can strip their Authorization header during a domain migration.
+    const service=path.startsWith('/api/runner/')||path.startsWith('/api/service/')||path.startsWith('/api/webhooks/');
+    if(!service&&env.PA_AUTH_MODE==='github'&&env.PA_ORIGIN&&url.origin!==env.PA_ORIGIN){
       return Response.redirect(env.PA_ORIGIN+path+url.search,307);
     }
     if(path.startsWith('/api/'))return route(request,env,runnerSource);

@@ -58,6 +58,19 @@ function loginRequest(token,path='/api/state',headers={}){
   return get(githubEnv(),path,{cookie:`${SESSION_COOKIE}=${token}`,...headers});
 }
 
+test('GitHub reconnection preserves the signed account and rejects a different numeric identity',async()=>{
+ for(const selected of [CONNECTION_USER.slice(7),'other-id']){
+  const env=githubEnv({PA_SIGNUP_MODE:'open'}),f=githubFixture({userId:selected}),p=new Platform(env,f.options);await p.register(CONNECTION_USER,'octocat');
+  const token=await sign({user:CONNECTION_USER,login:'octocat'},{secret:SESSION_KEY,context:SESSION_CONTEXT,ttlMs:SESSION_TTL_MS}),headers={cookie:SESSION_COOKIE+'='+token};
+  const start=await get(env,'/api/oauth/github/start',headers,f.options);assert.equal(start.status,302);assert.equal(cookieFrom(start,PREAUTH_COOKIE),null);
+  const state=new URL(start.headers.get('location')).searchParams.get('state'),done=await get(env,'/api/oauth/github/callback?state='+state+'&code=code',headers,f.options);assert.equal(done.status,302);
+  const connection=await p.store.connection(CONNECTION_USER,'github');
+  if(selected===CONNECTION_USER.slice(7)){assert.match(done.headers.get('location'),/connected=github/);assert.equal(connection.identity.id,selected);assert.equal(connection.user_id,CONNECTION_USER);}
+  else{assert.match(done.headers.get('location'),/different_account_disconnect_first/);assert.equal(connection,null);assert.equal((await all(env,'SELECT * FROM pa_connections')).length,0);}
+  env.DB.raw.close();
+ }
+});
+
 test('signed cookies reject tampering, expiry, wrong context and wrong key without throwing',async()=>{
   const value={user:'github:1',login:'octocat'};
   const token=await sign(value,{secret:SESSION_KEY,context:SESSION_CONTEXT,ttlMs:SESSION_TTL_MS,now:1000000});

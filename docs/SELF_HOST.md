@@ -1,6 +1,6 @@
 # Self-host Progressive Agent
 
-Use one stable HTTPS origin for the workbench and all OAuth callbacks. Additional landing-page domains redirect `/app` and `/api` to this origin, except the authenticated Feishu event webhook, which can be served directly on a custom domain. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel or isolated Codex / Claude Code containers on GitHub Actions.
+Use one stable HTTPS origin for the workbench and all OAuth callbacks. Browser navigation on additional domains redirects to this origin; token/signature-authenticated runner, service and Webhook endpoints retain direct handling for existing server clients. See [DOMAIN_MIGRATION.md](DOMAIN_MIGRATION.md) when changing domains. Production runs on Cloudflare Workers, D1 and Queues; code execution runs on BigModel or isolated Codex / Claude Code containers on GitHub Actions.
 
 ## Deploy infrastructure
 
