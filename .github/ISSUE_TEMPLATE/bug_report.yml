@@ -1,4 +1,4 @@
-name: Beta bug report
+name: Bug report
 description: Report a reproducible failure without private account data.
 labels: []
 body:
@@ -9,7 +9,7 @@ body:
     id: version
     attributes:
       label: Release version
-      placeholder: 0.2.0-beta.1
+      placeholder: 0.2.0
     validations:
       required: true
   - type: textarea
@@ -24,7 +24,7 @@ body:
     attributes:
       label: Deployment
       options:
-        - Hosted invited beta
+        - Hosted service
         - Self-hosted
     validations:
       required: true

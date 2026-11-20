@@ -22,7 +22,7 @@ export async function route(request,env,runnerSource,options={}){
   const url=new URL(request.url);let provider;
   try{
     const p=new Platform(env,options);const execution=new Execution(p,runnerSource);
-    const path=url.pathname;
+    const path=url.pathname,registration=env.PA_SIGNUP_MODE==='open'?'open':'invite';
     if(path==='/api/health'&&request.method==='GET'){const status=await health(p);return json(status,status.status==='ok'?200:503);}
     if(['/api/invitations/inspect','/api/invitations/start'].includes(path)&&request.method==='POST'){
       if(env.PA_AUTH_MODE!=='github')throw new Fault(503,'invitation_unavailable');
@@ -102,7 +102,7 @@ export async function route(request,env,runnerSource,options={}){
       if(path==='/api/oauth/github/callback'&&request.method==='GET'&&preauth)return await finishLogin();
       if(session)await requireAdmission(p,session.user,session.login);
       if(!user){
-        if(path==='/api/state'&&request.method==='GET')return json({error:'sign_in_required',loginUrl:'/api/oauth/github/start'},401);
+        if(path==='/api/state'&&request.method==='GET')return json({error:'sign_in_required',loginUrl:'/api/oauth/github/start',registration},401);
         if(path==='/api/oauth/github/start'&&request.method==='GET'){
           // First login: PKCE OAuth bound to a signed, expiring preauth
           // cookie holding the pending user id.
@@ -123,7 +123,7 @@ export async function route(request,env,runnerSource,options={}){
     if(request.method==='POST'&&request.headers.get('origin')!==env.PA_ORIGIN)throw new Fault(403,'origin_mismatch');
     if(path==='/api/state'&&request.method==='GET'){
       const state=await p.state(user);
-      state.release=release;
+      state.release=release;state.registration=registration;
       state.account=githubAuth?{...await p.store.one('SELECT id,login FROM pa_users WHERE id=?',user),admin:isAdmin(env,user)}:null;
       state.tasks=state.tasks.map(row=>{const {cliArtifact,...payload}=row.payload;return {...row,payload};});
       state.projects=state.projects.map(project=>{
