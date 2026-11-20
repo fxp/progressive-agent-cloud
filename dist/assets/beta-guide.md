@@ -1,8 +1,8 @@
-# Invited beta guide
+# Optional invitations and operations
 
-The hosted release is an invitation-only beta. It runs on Cloudflare and cloud coding runners; no Mac daemon or ChatGPT subscription login is required. Each participant authorizes their own accounts and supplies their own Agent API key. The project is open source under Apache-2.0; you may independently self-host it.
+The hosted service now accepts GitHub sign-in without an invitation. See [GETTING_STARTED.md](GETTING_STARTED.md) for public onboarding. The invitation mechanism below remains available for restricted self-hosted deployments. It runs on Cloudflare and cloud coding runners; no Mac daemon or ChatGPT subscription login is required. Each participant authorizes their own accounts and supplies their own Agent API key. The project is open source under Apache-2.0; you may independently self-host it.
 
-## Join
+## Join a restricted deployment
 
 Ask the operator for an invitation for your **GitHub username**, not an email address. Open the complete private link and choose that GitHub account. The link is bound to GitHub's stable numeric account ID, expires after the configured period and can be redeemed once. If GitHub selected a different account, reopen the invitation and select the invited account. An accepted membership does not expire when its original invitation link expires.
 
@@ -22,7 +22,7 @@ The invitation token stays in the URL fragment and is submitted in a same-origin
 - A connector with expired authorization asks for reconnection. A failed meeting source no longer blocks the same user's healthy independent source. Partial scheduler receipts identify the failing source, while healthy sources and their task queue continue. Transient source failures retry; authorization failures suspend only that source until reconnection.
 - A failed development task links its cloud run even before a PR exists. Inspect that run, correct binding/validation settings as needed, then use task recovery. If a CLI intent has no saved artifact, confirm the prior run failed before explicitly restarting; the service will not silently launch another CLI.
 - Replaying the same completed meeting reuses its tasks. A saved patch is checksummed and reused on retry. Draft PRs and result comments are keyed to the existing task.
-- Revoking an invited member disables subsequent workspace access, queue enrollment and runner publication. Previously started external jobs may continue until their bounded timeout; revocation is not a remote cancellation API. A replacement invitation can re-admit that same account without deleting its own workspace.
+- On a restricted deployment, revoking an invited member disables subsequent workspace access, queue enrollment and runner publication. Open registration independently admits accounts, so revoking an invitation does not disable access while open registration is enabled. Previously started external jobs may continue until their bounded timeout; revocation is not a remote cancellation API. A replacement invitation can re-admit that same account without deleting its own workspace.
 
 ## Operate invitations
 
@@ -30,7 +30,7 @@ Configure `PA_ADMIN_USER_IDS` with immutable internal IDs, for example `github:1
 
 Keep `PA_SIGNUP_MODE=allowlist` with the existing operator login allowlist. Invited members are separately admitted in D1, so no deployment is needed for each new participant. Existing explicitly allowlisted accounts and configured administrators retain their separate access when an invitation for them is revoked. Ordinary members cannot access the invitation ledger or create/revoke invitations.
 
-Open **Workbench → 内测管理**, enter a GitHub username and invitation lifetime, then copy the newly created private link. The operator sends it; the application does not automatically email or message anyone. The list shows pending, accepted, expired and revoked invitations without tokens. Revoking an old invitation does not revoke a newer replacement membership.
+Open **Workbench → 邀请管理**, enter a GitHub username and invitation lifetime, then copy the newly created private link. The operator sends it; the application does not automatically email or message anyone. The list shows pending, accepted, expired and revoked invitations without tokens. Revoking an old invitation does not revoke a newer replacement membership.
 
 Apply `drizzle/0004_beta_invites.sql` before this release. Back up the database first. The additive migration preserves users, credentials, projects and tasks. It is included in the migration helper and the local test database.
 

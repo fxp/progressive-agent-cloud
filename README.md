@@ -2,11 +2,11 @@
 
 Turn meeting decisions into reviewed code. Connect meeting notes through Feishu or a Webhook, and your own GitHub, Linear or GitLab.com projects, bind a project to a repository and a selected coding Agent, and receive a tested draft pull request linked back to the original requirement.
 
-[Hosted invited beta](https://progressive.xiaopingfeng.com/app) · [Beta guide](docs/BETA_GUIDE.md) · [Self-hosting](docs/SELF_HOST.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md)
+[Open the workbench](https://progressive.xiaopingfeng.com/app) · [Get started](docs/GETTING_STARTED.md) · [Self-hosting](docs/SELF_HOST.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md)
 
 ## Start using it
 
-1. Open your account-bound invitation for first access, then sign in with GitHub. Readable GitHub Projects synchronize automatically. Self-hosted deployments can choose their own signup policy.
+1. Sign in with GitHub to create your private workspace. The hosted service has open registration and requires no invitation. Readable GitHub Projects synchronize automatically. Self-hosted deployments can choose their own signup policy.
 2. Authorize Feishu or create a meeting notes Webhook. Connect Linear or GitLab.com Issues if your requirements live there.
 3. Connect BigModel Managed Agent, Codex CLI or Claude Code with your own API key. Codex and Claude Code support compatible model gateways; choose the base URL and model explicitly.
 4. Select an imported project, bind its writable GitHub repository and Agent, review the validation commands and allowed files, and save. The installer adds the cloud workflow and encrypted repository secrets.

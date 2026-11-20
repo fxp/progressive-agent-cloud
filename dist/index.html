@@ -18,7 +18,7 @@
     <nav class="nav shell" aria-label="主导航">
       <a class="brand" href="#" aria-label="Progressive Agent 首页"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>progressive<span class="brand-agent"> / agent</span></a>
       <div class="nav-links"><a href="#workflow">工作方式</a><a href="#connectors">连接器</a><a href="#open">开源设计</a></div>
-      <a class="nav-cta" href="/app">内测工作台 <span class="book" aria-hidden="true">▤</span></a>
+      <a class="nav-cta" href="/app">开始使用 <span class="book" aria-hidden="true">▤</span></a>
     </nav>
   </header>
   <main id="main">
@@ -27,8 +27,8 @@
         <div class="eyebrow"><span class="tiny-mark"></span>为使用 Agent 的开发团队而造</div>
         <h1>会议里的下一步，<br>成为代码里的<span class="emphasis">下一版。<span class="underline"></span></span></h1>
         <p class="hero-description">从讨论中提取待办，找到对应项目，交给你的 Agent 开发。<br class="desktop">经过测试的 Pull Request，回到最初的会话。</p>
-        <div class="hero-actions"><a class="button primary" href="#workflow">看看它怎么工作 <span class="play-icon" aria-hidden="true"></span></a><a class="button secondary" href="design.html">探索开源设计</a></div>
-        <p class="hero-note"><span class="branch-symbol" aria-hidden="true">⑂</span> 邀请内测 <span class="note-dot">·</span> 使用自己的账号与 Agent 密钥</p>
+        <div class="hero-actions"><a class="button primary" href="/app">使用 GitHub 开始 <span aria-hidden="true">↗</span></a><a class="button secondary" href="design.html">探索开源设计</a></div>
+        <p class="hero-note"><span class="branch-symbol" aria-hidden="true">⑂</span> 开放注册 <span class="note-dot">·</span> 使用自己的账号与 Agent 密钥</p>
       </div>
       <div class="hero-margin" aria-hidden="true"><span>DISCUSS</span><span class="margin-line"></span><span>BUILD</span></div>
     </section>
@@ -98,7 +98,7 @@
 <span class="syntax-purple">const</span> registry = <span class="syntax-purple">new</span> ConnectorRegistry()
 registry.register(plugin)</pre><div class="interface-bottom">同一份任务契约，连接不同执行方式。</div></div></div>
     </section>
-    <section class="faq shell" aria-labelledby="faq-title"><h2 id="faq-title">开始之前，你可能想知道</h2><div class="faq-list"><details><summary>如何加入内测？</summary><p>请向邀请人提供 GitHub 用户名，使用专属邀请链接登录。之后连接自己的会议来源、GitHub 或 Linear 项目和 Agent 密钥，绑定测试仓库即可开始。内测指南说明了接入步骤和已知限制。</p><a href="https://github.com/fxp/progressive-agent-cloud/blob/main/docs/BETA_GUIDE.md">阅读内测指南 ↗</a></details>
+    <section class="faq shell" aria-labelledby="faq-title"><h2 id="faq-title">开始之前，你可能想知道</h2><div class="faq-list"><details><summary>如何开始使用？</summary><p>直接使用 GitHub 登录，无需邀请。连接自己的会议来源、GitHub 或 Linear 项目和 Agent 密钥，再绑定代码仓库。新会议中的明确待办会进入自动开发流程；飞书授权仍受所在公司的权限策略约束。</p><a href="https://github.com/fxp/progressive-agent-cloud/blob/main/docs/GETTING_STARTED.md">阅读接入指南 ↗</a></details>
       <details><summary>会自动执行会议里所有的待办吗？</summary><p>产品设计中，项目决定执行策略。任务先确认项目、验收条件和权限，信息不齐会进入待确认。团队可以为指定项目和来源打开自动执行。</p></details>
       <details><summary>可以用我自己的 Agent 和代码仓库吗？</summary><p>可以通过适配器接入。当前支持 BigModel Managed Agent、Codex CLI 和 Claude Code。Codex 与 Claude Code 已通过兼容模型网关完成云端开发、测试、PR 和回填；更多工具可通过五类插件接口扩展。</p></details>
       <details><summary>Mac 关机以后还能运行吗？</summary><p>云端试点的发现、接力、编码、测试和回填都在云端执行。本机接力停用的验收已经通过，物理关机尚未实测。使用本地 Agent 时，需要对应执行主机在线。</p></details>
